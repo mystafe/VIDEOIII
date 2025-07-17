@@ -9,3 +9,8 @@ body {
   background-color: #f4f7f9;
   color: #333;
 }
+
+body.dark-mode {
+  background-color: #1c1c1e;
+  color: #f4f4f4;
+}
