@@ -8,6 +8,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { version } = require('./package.json');
 
 // Diğer modüllerimizi import ediyoruz
 const { analyzeVideoInBatches } = require('./analyzer.js');
@@ -24,6 +25,10 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 5001;
 app.use(cors());
+
+app.get('/', (req, res) => {
+  res.json({ version });
+});
 
 // Yüklenen dosyalar için geçici bir klasör oluştur
 const uploadDir = path.join(__dirname, 'uploads');
@@ -85,4 +90,3 @@ app.post('/api/analyze', upload.single('video'), async (req, res) => {
 });
 
 server.listen(PORT, () => console.log(`🚀 Server started on http://localhost:${PORT}`));
-//
