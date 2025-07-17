@@ -6,8 +6,8 @@ import './Spinner.css';
 import { config as defaultConfig } from './config.js';
 
 const Spinner = () => <div className="spinner"></div>;
-const socket = io("http://localhost:5001");
-// const socket = io("https://videoii-server.onrender.com");
+// const socket = io("http://localhost:5001");
+const socket = io("https://videoii-server.onrender.com");
 
 function App() {
   const [logoClicks, setLogoClicks] = useState(0);
@@ -69,8 +69,8 @@ function App() {
     formData.append('secondsPerBatch', secondsPerBatch);
     formData.append('frameInterval', frameInterval);
     try {
-      const response = await axios.post('http://localhost:5001/api/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      // const response = await axios.post('https://videoii-server.onrender.com/api/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      // const response = await axios.post('http://localhost:5001/api/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const response = await axios.post('https://videoii-server.onrender.com/api/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setAnalysisStatus(prev => ({ ...prev, message: response.data.message }));
     } catch (error) {
       setAnalysisStatus({ ...analysisStatus, error: error.response?.data?.error || 'An upload error occurred.' });
@@ -115,8 +115,8 @@ function App() {
     <div className="App">
       <div className="container">
         <header className="App-header">
-          <h1 onClick={handleLogoClick}>VIDEOII</h1>
-          <p>Smart Video Analysis Platform</p>
+          <h1 onClick={handleLogoClick}>VIDEOIII</h1>
+          <p>Smart Video Analysis Platform VIDEOIII</p>
         </header>
         <main className="App-main">
           {!analysisStatus.result && !analysisStatus.error && (
