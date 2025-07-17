@@ -3,7 +3,7 @@ import axios from 'axios';
 import io from "socket.io-client";
 import './App.css';
 import './Spinner.css';
-import { config as defaultConfig } from './config.js';
+import { config as defaultConfig, MODELS, DEFAULT_MODEL } from './config.js';
 
 const Spinner = () => <div className="spinner"></div>;
 // const socket = io("http://localhost:5001");
@@ -12,10 +12,14 @@ const socket = io("https://videoii-server.onrender.com");
 function App() {
   const [logoClicks, setLogoClicks] = useState(0);
   const [superMode, setSuperMode] = useState(false);
+  const getPreferredTheme = () =>
+    window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  const [theme, setTheme] = useState(getPreferredTheme());
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
   const getInitialAnalysisState = () => ({ message: 'Please select a video and configure settings to begin.', percent: 0, result: '', error: '' });
-  const [totalBatches, setTotalBatches] = useState(defaultConfig.TOTAL_BATCHES);
-  const [secondsPerBatch, setSecondsPerBatch] = useState(defaultConfig.SECONDS_PER_BATCH);
-  const [frameInterval, setFrameInterval] = useState(defaultConfig.FRAME_INTERVAL_SECONDS);
+  const [totalBatches, setTotalBatches] = useState(1);
+  const [secondsPerBatch, setSecondsPerBatch] = useState(MODELS[DEFAULT_MODEL].secondsPerBatch);
+  const [frameInterval, setFrameInterval] = useState(MODELS[DEFAULT_MODEL].videoFrame);
   // const [socket2, setSocket2] = useState(defaultConfig.SOCKET);
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -27,6 +31,10 @@ function App() {
   const [maxBatchesAllowed, setMaxBatchesAllowed] = useState(10);
   const fileInputRef = useRef(null);
   const videoRef = useRef(null);
+
+  useEffect(() => {
+    document.body.className = theme === 'dark' ? 'dark-mode' : '';
+  }, [theme]);
 
   useEffect(() => {
     socket.on('connect', () => { setSocketId(socket.id); });
@@ -49,13 +57,45 @@ function App() {
   const handleFileChange = (event) => {
     const file = event.target.files[0];
     if (file) {
+      const limit = MODELS[selectedModel].maxSize * 1024 * 1024;
+      if (file.size > limit) {
+        setAnalysisStatus({ ...getInitialAnalysisState(), error: `File exceeds ${MODELS[selectedModel].maxSize}MB limit.` });
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
       setSelectedFile(file);
       setPreviewUrl(URL.createObjectURL(file));
       setAnalysisStatus({ message: `File selected: ${file.name}. Ready to start.`, percent: 0, result: '', error: '' });
       setMaxBatchesAllowed(1000);
     }
   };
-  const handleVideoMetadata = () => { if (videoRef.current) { updateMaxBatches(videoRef.current.duration, secondsPerBatch); } };
+  const handleVideoMetadata = () => {
+    if (videoRef.current) {
+      const duration = videoRef.current.duration;
+      if (duration > MODELS[selectedModel].maxDuration) {
+        setAnalysisStatus({ ...getInitialAnalysisState(), error: `Video exceeds ${MODELS[selectedModel].maxDuration / 60} minute limit.` });
+        setSelectedFile(null);
+        setPreviewUrl(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+      updateMaxBatches(duration, secondsPerBatch);
+      setTotalBatches(Math.ceil(duration / secondsPerBatch));
+    }
+  };
+
+  useEffect(() => {
+    if (!superMode) {
+      const modelCfg = MODELS[selectedModel];
+      setSecondsPerBatch(modelCfg.secondsPerBatch);
+      const interval = analysisType === 'meeting' ? modelCfg.meetingFrame : modelCfg.videoFrame;
+      setFrameInterval(interval);
+      if (videoRef.current && videoRef.current.duration) {
+        setTotalBatches(Math.ceil(videoRef.current.duration / modelCfg.secondsPerBatch));
+        updateMaxBatches(videoRef.current.duration, modelCfg.secondsPerBatch);
+      }
+    }
+  }, [selectedModel, analysisType, superMode]);
   const handleUpload = async () => {
     if (!selectedFile || !socketId) { setAnalysisStatus({ ...analysisStatus, error: 'Please select a file and wait for server connection.' }); return; }
     setIsLoading(true);
@@ -82,9 +122,9 @@ function App() {
     setSelectedFile(null);
     setPreviewUrl(null);
     setAnalysisStatus(getInitialAnalysisState());
-    setTotalBatches(defaultConfig.TOTAL_BATCHES);
-    setSecondsPerBatch(defaultConfig.SECONDS_PER_BATCH);
-    setFrameInterval(defaultConfig.FRAME_INTERVAL_SECONDS);
+    setTotalBatches(1);
+    setSecondsPerBatch(MODELS[DEFAULT_MODEL].secondsPerBatch);
+    setFrameInterval(MODELS[DEFAULT_MODEL].videoFrame);
     // setSocket(defaultConfig.SOCKET);
     setMaxBatchesAllowed(10);
     setLogoClicks(0);
@@ -117,15 +157,30 @@ function App() {
         <header className="App-header">
           <h1 onClick={handleLogoClick}>VIDEOIII</h1>
           <p>Smart Video Analysis Platform VIDEOIII</p>
+          <button className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
         </header>
         <main className="App-main">
           {!analysisStatus.result && !analysisStatus.error && (
             <div className="controls-card">
               <h2><span className="step-number">1</span> Configuration</h2>
               <div className="form-grid">
-                <div className="form-group"><label htmlFor="total-batches">Total Batches (Max: {Math.min(maxBatchesAllowed, superMode ? 100 : 10)})</label><input id="total-batches" type="number" value={totalBatches} onChange={handleBatchChange} min="1" max={Math.min(maxBatchesAllowed, superMode ? 100 : 10)} disabled={isLoading || !selectedFile} /></div>
-                <div className="form-group"><label htmlFor="seconds-per-batch">Seconds per Batch {superMode && '(Super Mode: Max 600)'}</label><input id="seconds-per-batch" type="number" value={secondsPerBatch} onChange={handleSecondsChange} min="10" max={superMode ? "600" : "60"} step="10" disabled={isLoading} /></div>
-                <div className="form-group"><label htmlFor="frame-interval">Frame Interval (sec)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(e.target.value)} min="1" disabled={isLoading} /></div>
+                <div className="form-group">
+                  <label htmlFor="model-select">Model</label>
+                  <select id="model-select" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} disabled={isLoading}>
+                    {Object.entries(MODELS).map(([key, m]) => (
+                      <option key={key} value={key}>{`${m.label} - ${m.note}`}</option>
+                    ))}
+                  </select>
+                </div>
+                {superMode && (
+                  <>
+                    <div className="form-group"><label htmlFor="total-batches">Total Batches (Max: {Math.min(maxBatchesAllowed, superMode ? 100 : 10)})</label><input id="total-batches" type="number" value={totalBatches} onChange={handleBatchChange} min="1" max={Math.min(maxBatchesAllowed, superMode ? 100 : 10)} disabled={isLoading || !selectedFile} /></div>
+                    <div className="form-group"><label htmlFor="seconds-per-batch">Seconds per Batch (Super Mode)</label><input id="seconds-per-batch" type="number" value={secondsPerBatch} onChange={handleSecondsChange} min="10" max="600" step="10" disabled={isLoading} /></div>
+                    <div className="form-group"><label htmlFor="frame-interval">Frame Interval (sec)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(e.target.value)} min="1" disabled={isLoading} /></div>
+                  </>
+                )}
                 <div className="form-group"><label htmlFor="analysis-type">Analysis Type</label><select id="analysis-type" value={analysisType} onChange={(e) => setAnalysisType(e.target.value)} disabled={isLoading}><option value="general">General Analysis</option><option value="meeting">Meeting Analysis</option></select></div>
                 <div className="form-group"><label htmlFor="output-language">Report Language</label><select id="output-language" value={outputLanguage} onChange={(e) => setOutputLanguage(e.target.value)} disabled={isLoading}><option value="Turkish">Turkish</option><option value="English">English</option></select></div>
               </div>

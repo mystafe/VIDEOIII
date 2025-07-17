@@ -30,3 +30,29 @@ input[type="file"] { display: none; }
 .video-preview-container video { display: block; width: 100%; }
 .App-footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid var(--border-color); text-align: center; }
 .App-footer p { color: var(--subtle-text-color); font-size: 0.9rem; }
+
+body.dark-mode {
+  --primary-color: #0a84ff;
+  --secondary-color: #333333;
+  --background-color: #1c1c1e;
+  --card-background: #2c2c2e;
+  --text-color: #f4f4f4;
+  --subtle-text-color: #9a9a9d;
+  --border-color: #444;
+  --success-color: #32d74b;
+  --error-color: #ff453a;
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--primary-color);
+  color: #fff;
+  font-size: 0.8rem;
+}
+
