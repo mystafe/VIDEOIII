@@ -1,0 +1,32 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+:root { --primary-color: #007aff; --secondary-color: #f2f2f7; --background-color: #f9f9fb; --card-background: #ffffff; --text-color: #1d1d1f; --subtle-text-color: #6e6e73; --border-color: #d1d1d6; --success-color: #34c759; --error-color: #ff3b30; }
+body { font-family: 'Inter', sans-serif; background-color: var(--background-color); color: var(--text-color); margin: 0; }
+.App { display: flex; justify-content: center; padding: 40px 20px; }
+.container { width: 100%; max-width: 800px; }
+.App-header { text-align: center; margin-bottom: 40px; }
+.App-header h1 { font-size: 3rem; font-weight: 700; margin: 0; color: var(--primary-color); user-select: none; }
+.App-header p { font-size: 1.1rem; color: var(--subtle-text-color); }
+.controls-card, .status-card { background: var(--card-background); border-radius: 12px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 30px; }
+h2 { font-size: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-top: 0; margin-bottom: 25px; display: flex; align-items: center; }
+.step-number { background-color: var(--primary-color); color: white; border-radius: 50%; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-size: 1rem; font-weight: 700; margin-right: 15px; flex-shrink: 0; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px; margin-bottom: 30px; align-items: end; }
+.form-group label { display: block; font-weight: 500; margin-bottom: 8px; font-size: 0.9rem; min-height: 1.2em; line-height: 1.2em; }
+.form-group input, .form-group select { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background-color: var(--secondary-color); font-size: 1rem; box-sizing: border-box; }
+input[type="file"] { display: none; }
+.upload-button { display: inline-block; padding: 12px 20px; border: 2px dashed var(--border-color); border-radius: 8px; cursor: pointer; width: 100%; text-align: center; color: var(--subtle-text-color); transition: all 0.2s ease-in-out; box-sizing: border-box; }
+.upload-button.file-selected { border-color: var(--success-color); color: var(--success-color); font-weight: 500; }
+.analyze-button { width: 100%; padding: 15px; font-size: 1.1rem; font-weight: 700; color: white; background-color: var(--primary-color); border: none; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; margin-top: 30px; display: flex; align-items: center; justify-content: center; }
+.analyze-button:hover:not(:disabled) { opacity: 0.85; }
+.analyze-button:disabled { background-color: #a3a3a3; cursor: not-allowed; }
+.status-panel p.status-message { font-style: italic; color: var(--subtle-text-color); }
+.progress-bar-container { width: 100%; background-color: #e0e0e0; border-radius: 4px; margin: 20px 0; overflow: hidden; }
+.progress-bar { height: 8px; background-color: var(--primary-color); border-radius: 4px; transition: width 0.4s ease-in-out; }
+.error-message { color: var(--error-color); font-weight: 500; }
+.result-container { background: #2d2d2d; color: #e0e0e0; border-radius: 8px; padding: 20px; margin-top: 20px; text-align: left; max-height: 500px; overflow-y: auto; font-size: 0.9rem; }
+.report-content { white-space: pre-wrap; word-wrap: break-word; font-family: 'Courier New', Courier, monospace; }
+.reset-button { width: 100%; padding: 15px; font-size: 1.1rem; font-weight: 700; color: white; background-color: var(--success-color); border: none; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; margin-top: 30px; }
+.reset-button:hover { opacity: 0.85; }
+.video-preview-container { margin-top: 20px; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+.video-preview-container video { display: block; width: 100%; }
+.App-footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid var(--border-color); text-align: center; }
+.App-footer p { color: var(--subtle-text-color); font-size: 0.9rem; }

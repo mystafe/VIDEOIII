@@ -1,0 +1,20 @@
+# Gizli ve kişisel dosyalar
+.env
+package-lock.json
+node_modules
+Input
+temp_frames
+temp_audio
+
+# Bağımlılıklar
+/node_modules
+/client/node_modules
+/server/node_modules
+
+# Üretim build'leri
+/client/build
+
+# Gizli dosyalar
+.env
+server/.env  <-- BU SATIR ÇOK ÖNEMLİ
+uploads

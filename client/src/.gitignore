@@ -1,0 +1,11 @@
+# Bağımlılıklar
+/node_modules
+/client/node_modules
+/server/node_modules
+
+# Üretim build'leri
+/client/build
+
+# Gizli dosyalar
+.env
+server/.env  <-- BU SATIR ÇOK ÖNEMLİ
