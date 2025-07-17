@@ -17,7 +17,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:3000", "https://videoii.vercel.app"],
+    origin: ["http://localhost:3000", "https://videoii.vercel.app", "https://videoiii.vercel.app"],
     methods: ["GET", "POST"]
   }
 });
@@ -85,3 +85,4 @@ app.post('/api/analyze', upload.single('video'), async (req, res) => {
 });
 
 server.listen(PORT, () => console.log(`🚀 Server started on http://localhost:${PORT}`));
+//
