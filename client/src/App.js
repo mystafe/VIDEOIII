@@ -150,7 +150,7 @@ function App() {
           )}
         </main>
         <footer className="App-footer">
-          <p>Developed by Mustafa Evleksiz</p>
+          <p>Developed by Mustafa Evleksiz - Version {defaultConfig.VERSION}</p>
         </footer>
       </div>
     </div>
