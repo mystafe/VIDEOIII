@@ -3,6 +3,7 @@
 const config = require('./config.js');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fs = require("fs");
+const { createReadStream, promises: fsPromises } = require("fs");
 const path = require("path");
 const axios = require('axios');
 
@@ -20,12 +21,19 @@ async function uploadFileToGemini(filePath, mimeType, onProgressUpdate) {
   const { send, uiTexts } = onProgressUpdate;
   try {
     send({ type: 'status', message: `${uiTexts.uploading} ${path.basename(filePath)}` });
-    const stats = fs.statSync(filePath);
-    const fileData = fs.readFileSync(filePath);
+    const stats = await fsPromises.stat(filePath);
+    const fileStream = createReadStream(filePath);
     const response = await axios.post(
       `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GOOGLE_API_KEY}`,
-      fileData,
-      { headers: { 'Content-Type': mimeType, 'x-goog-upload-protocol': 'raw', 'x-goog-file-name': path.basename(filePath), 'Content-Length': stats.size.toString() } }
+      fileStream,
+      {
+        headers: {
+          'Content-Type': mimeType,
+          'x-goog-upload-protocol': 'raw',
+          'x-goog-file-name': path.basename(filePath),
+          'Content-Length': stats.size.toString()
+        }
+      }
     );
     send({ type: 'status', message: uiTexts.audioUploadSuccess });
     return response.data.file;
@@ -107,9 +115,15 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
       continue;
     }
     uploadedFileNames.push(audioFile.name);
+    await fsPromises.unlink(audioChunkPath).catch(() => {});
 
-    const frameFiles = fs.readdirSync(tempFolders.frames).filter(f => f.startsWith(`batch_${currentBatch}`));
-    const imageParts = frameFiles.map(file => fileToGenerativePart(path.join(tempFolders.frames, file), "image/png")).filter(part => part !== null);
+    const frameFiles = (await fsPromises.readdir(tempFolders.frames)).filter(f => f.startsWith(`batch_${currentBatch}`));
+    const imageParts = [];
+    for (const file of frameFiles) {
+      const part = fileToGenerativePart(path.join(tempFolders.frames, file), "image/png");
+      if (part) imageParts.push(part);
+      await fsPromises.unlink(path.join(tempFolders.frames, file)).catch(() => {});
+    }
 
     const analysisPercent = percentage + Math.round((100 / totalBatches) / 2);
     send({ type: 'progress', message: uiTexts.step(currentBatch + 1, totalBatches, uiTexts.analyzing), percent: analysisPercent });
