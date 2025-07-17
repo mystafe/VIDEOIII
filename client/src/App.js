@@ -102,6 +102,7 @@ function App() {
   const handleUpload = async () => {
     if (!selectedFile || !socketId) { setAnalysisStatus({ ...analysisStatus, error: 'Please select a file and wait for server connection.' }); return; }
     setIsLoading(true);
+    setOpenSection('analysis');
     setAnalysisStatus({ message: 'Uploading video...', percent: 0, result: '', error: '' });
     const durationNeeded = totalBatches * secondsPerBatch;
     let uploadFile = selectedFile;
@@ -228,17 +229,6 @@ function App() {
                   <div className="form-group"><label htmlFor="analysis-type">Analysis Type</label><select id="analysis-type" value={analysisType} onChange={(e) => setAnalysisType(e.target.value)} disabled={isLoading}><option value="general">General Analysis</option><option value="meeting">Meeting Analysis</option></select></div>
                   <div className="form-group"><label htmlFor="output-language">Report Language</label><select id="output-language" value={outputLanguage} onChange={(e) => setOutputLanguage(e.target.value)} disabled={isLoading}><option value="Turkish">Turkish</option><option value="English">English</option></select></div>
                 </div>
-                <button className="info-button" onClick={toggleConfigInfo}>📊</button>
-                {showConfigInfo && (
-                  <div className="tooltip">
-                    <p>Model: {selectedModel}</p>
-                    <p>Batches: {totalBatches}</p>
-                    <p>Seconds/Batch: {secondsPerBatch}</p>
-                    <p>Frame Interval: {frameInterval}</p>
-                    <p>Type: {analysisType}</p>
-                    <p>Language: {outputLanguage}</p>
-                  </div>
-                )}
               </>
             )}
           </div>
@@ -255,11 +245,22 @@ function App() {
                   </div>
                 )}
                 <button className="info-button" onClick={toggleFileInfo}>ℹ️</button>
+                <button className="info-button" onClick={toggleConfigInfo}>📊</button>
                 {showFileInfo && selectedFile && (
                   <div className="tooltip">
                     <p>Name: {selectedFile.name}</p>
                     <p>Size: {(selectedFile.size / (1024*1024)).toFixed(2)} MB</p>
                     {videoRef.current && <p>Duration: {Math.round(videoRef.current.duration)} s</p>}
+                  </div>
+                )}
+                {showConfigInfo && (
+                  <div className="tooltip">
+                    <p>Model: {selectedModel}</p>
+                    <p>Batches: {totalBatches}</p>
+                    <p>Seconds/Batch: {secondsPerBatch}</p>
+                    <p>Frame Interval: {frameInterval}</p>
+                    <p>Type: {analysisType}</p>
+                    <p>Language: {outputLanguage}</p>
                   </div>
                 )}
                 <button className="analyze-button" onClick={handleUpload} disabled={isLoading || !selectedFile}>{isLoading ? <Spinner /> : null}{isLoading ? 'Analyzing...' : 'Start Analysis'}</button>
@@ -269,7 +270,7 @@ function App() {
 
           {(isLoading || analysisStatus.result || analysisStatus.error) && (
             <div className="status-card">
-              <h2 onClick={() => toggleSection('analysis')}><span className="step-number">3</span> Analysis Progress</h2>
+              <h2 onClick={() => toggleSection('analysis')}><span className="step-number">3</span> Analysis</h2>
               {openSection === 'analysis' && (
                 <>
                   <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${analysisStatus.percent}%` }}></div></div>
