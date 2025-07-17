@@ -1,11 +1,11 @@
 {
   "name": "server",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "",
   "main": "index.js",
 "scripts": {
-  "start": "node index.js",
-  "dev": "nodemon index.js"
+  "start": "node --max-old-space-size=256 index.js",
+  "dev": "nodemon --exec node --max-old-space-size=256 index.js"
 },
   "keywords": [],
   "author": "",
