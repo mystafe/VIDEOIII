@@ -31,6 +31,9 @@ function App() {
   const [maxBatchesAllowed, setMaxBatchesAllowed] = useState(10);
   const fileInputRef = useRef(null);
   const videoRef = useRef(null);
+  const [openSection, setOpenSection] = useState('config');
+  const [showFileInfo, setShowFileInfo] = useState(false);
+  const [showConfigInfo, setShowConfigInfo] = useState(false);
 
   useEffect(() => {
     document.body.className = theme === 'dark' ? 'dark-mode' : '';
@@ -100,8 +103,17 @@ function App() {
     if (!selectedFile || !socketId) { setAnalysisStatus({ ...analysisStatus, error: 'Please select a file and wait for server connection.' }); return; }
     setIsLoading(true);
     setAnalysisStatus({ message: 'Uploading video...', percent: 0, result: '', error: '' });
+    const durationNeeded = totalBatches * secondsPerBatch;
+    let uploadFile = selectedFile;
+    if (videoRef.current && durationNeeded < videoRef.current.duration) {
+      try {
+        uploadFile = await trimVideo(selectedFile, durationNeeded);
+      } catch (e) {
+        console.error('Trim failed, sending full file', e);
+      }
+    }
     const formData = new FormData();
-    formData.append('video', selectedFile);
+    formData.append('video', uploadFile);
     formData.append('analysisType', analysisType);
     formData.append('outputLanguage', outputLanguage);
     formData.append('socketId', socketId);
@@ -151,6 +163,37 @@ function App() {
     setSecondsPerBatch(value);
     if (videoRef.current && videoRef.current.duration) { updateMaxBatches(videoRef.current.duration, value); }
   };
+  const toggleSection = (section) => {
+    setOpenSection(prev => (prev === section ? null : section));
+  };
+  const toggleFileInfo = () => setShowFileInfo(v => !v);
+  const toggleConfigInfo = () => setShowConfigInfo(v => !v);
+
+  const trimVideo = (file, duration) => {
+    return new Promise((resolve, reject) => {
+      try {
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(file);
+        video.muted = true;
+        let chunks = [];
+        video.onloadedmetadata = () => {
+          const stream = video.captureStream();
+          const recorder = new MediaRecorder(stream);
+          recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+          recorder.onstop = () => {
+            const blob = new Blob(chunks, { type: file.type });
+            resolve(new File([blob], file.name, { type: file.type }));
+          };
+          recorder.start();
+          video.play();
+          setTimeout(() => { recorder.stop(); video.pause(); }, duration * 1000);
+        };
+        video.onerror = (e) => reject(e);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  };
   return (
     <div className="App">
       <div className="container">
@@ -162,45 +205,85 @@ function App() {
           </button>
         </header>
         <main className="App-main">
-          {!analysisStatus.result && !analysisStatus.error && (
-            <div className="controls-card">
-              <h2><span className="step-number">1</span> Configuration</h2>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label htmlFor="model-select">Model</label>
-                  <select id="model-select" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} disabled={isLoading}>
-                    {Object.entries(MODELS).map(([key, m]) => (
-                      <option key={key} value={key}>{`${m.label} - ${m.note}`}</option>
-                    ))}
-                  </select>
+          <div className="controls-card">
+            <h2 onClick={() => toggleSection('config')}><span className="step-number">1</span> Configuration</h2>
+            {openSection === 'config' && (
+              <>
+                <div className="form-grid">
+                  <div className="form-group model-group">
+                    <label htmlFor="model-select">Model</label>
+                    <select id="model-select" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} disabled={isLoading}>
+                      {Object.entries(MODELS).map(([key, m]) => (
+                        <option key={key} value={key}>{`${m.label} - ${m.note}`}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {superMode && (
+                    <>
+                      <div className="form-group"><label htmlFor="total-batches">Total Batches (Max: {Math.min(maxBatchesAllowed, superMode ? 100 : 10)})</label><input id="total-batches" type="number" value={totalBatches} onChange={handleBatchChange} min="1" max={Math.min(maxBatchesAllowed, superMode ? 100 : 10)} disabled={isLoading || !selectedFile} /></div>
+                      <div className="form-group"><label htmlFor="seconds-per-batch">Seconds per Batch (Super Mode)</label><input id="seconds-per-batch" type="number" value={secondsPerBatch} onChange={handleSecondsChange} min="10" max="600" step="10" disabled={isLoading} /></div>
+                      <div className="form-group"><label htmlFor="frame-interval">Frame Interval (sec)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(e.target.value)} min="1" disabled={isLoading} /></div>
+                    </>
+                  )}
+                  <div className="form-group"><label htmlFor="analysis-type">Analysis Type</label><select id="analysis-type" value={analysisType} onChange={(e) => setAnalysisType(e.target.value)} disabled={isLoading}><option value="general">General Analysis</option><option value="meeting">Meeting Analysis</option></select></div>
+                  <div className="form-group"><label htmlFor="output-language">Report Language</label><select id="output-language" value={outputLanguage} onChange={(e) => setOutputLanguage(e.target.value)} disabled={isLoading}><option value="Turkish">Turkish</option><option value="English">English</option></select></div>
                 </div>
-                {superMode && (
-                  <>
-                    <div className="form-group"><label htmlFor="total-batches">Total Batches (Max: {Math.min(maxBatchesAllowed, superMode ? 100 : 10)})</label><input id="total-batches" type="number" value={totalBatches} onChange={handleBatchChange} min="1" max={Math.min(maxBatchesAllowed, superMode ? 100 : 10)} disabled={isLoading || !selectedFile} /></div>
-                    <div className="form-group"><label htmlFor="seconds-per-batch">Seconds per Batch (Super Mode)</label><input id="seconds-per-batch" type="number" value={secondsPerBatch} onChange={handleSecondsChange} min="10" max="600" step="10" disabled={isLoading} /></div>
-                    <div className="form-group"><label htmlFor="frame-interval">Frame Interval (sec)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(e.target.value)} min="1" disabled={isLoading} /></div>
-                  </>
+                <button className="info-button" onClick={toggleConfigInfo}>📊</button>
+                {showConfigInfo && (
+                  <div className="tooltip">
+                    <p>Model: {selectedModel}</p>
+                    <p>Batches: {totalBatches}</p>
+                    <p>Seconds/Batch: {secondsPerBatch}</p>
+                    <p>Frame Interval: {frameInterval}</p>
+                    <p>Type: {analysisType}</p>
+                    <p>Language: {outputLanguage}</p>
+                  </div>
                 )}
-                <div className="form-group"><label htmlFor="analysis-type">Analysis Type</label><select id="analysis-type" value={analysisType} onChange={(e) => setAnalysisType(e.target.value)} disabled={isLoading}><option value="general">General Analysis</option><option value="meeting">Meeting Analysis</option></select></div>
-                <div className="form-group"><label htmlFor="output-language">Report Language</label><select id="output-language" value={outputLanguage} onChange={(e) => setOutputLanguage(e.target.value)} disabled={isLoading}><option value="Turkish">Turkish</option><option value="English">English</option></select></div>
-              </div>
-              <div className="upload-section">
-                <h2><span className="step-number">2</span> Upload Video</h2>
+              </>
+            )}
+          </div>
+
+          <div className="controls-card">
+            <h2 onClick={() => toggleSection('upload')}><span className="step-number">2</span> Upload Video</h2>
+            {openSection === 'upload' && (
+              <>
                 <input id="file-upload" type="file" accept="video/*" onChange={handleFileChange} disabled={isLoading} ref={fileInputRef} />
                 <label htmlFor="file-upload" className={`upload-button ${selectedFile ? 'file-selected' : ''}`}>{selectedFile ? selectedFile.name : 'Choose a video file...'}</label>
-                {previewUrl && (<div className="video-preview-container"><video controls src={previewUrl} width="100%" ref={videoRef} onLoadedMetadata={handleVideoMetadata} /></div>)}
-              </div>
-              <button className="analyze-button" onClick={handleUpload} disabled={isLoading || !selectedFile}>{isLoading ? <Spinner /> : null}{isLoading ? 'Analyzing...' : 'Start Analysis'}</button>
-            </div>
-          )}
+                {previewUrl && (
+                  <div className="video-preview-container">
+                    <video controls src={previewUrl} width="100%" ref={videoRef} onLoadedMetadata={handleVideoMetadata} />
+                  </div>
+                )}
+                <button className="info-button" onClick={toggleFileInfo}>ℹ️</button>
+                {showFileInfo && selectedFile && (
+                  <div className="tooltip">
+                    <p>Name: {selectedFile.name}</p>
+                    <p>Size: {(selectedFile.size / (1024*1024)).toFixed(2)} MB</p>
+                    {videoRef.current && <p>Duration: {Math.round(videoRef.current.duration)} s</p>}
+                  </div>
+                )}
+                <button className="analyze-button" onClick={handleUpload} disabled={isLoading || !selectedFile}>{isLoading ? <Spinner /> : null}{isLoading ? 'Analyzing...' : 'Start Analysis'}</button>
+              </>
+            )}
+          </div>
+
           {(isLoading || analysisStatus.result || analysisStatus.error) && (
             <div className="status-card">
-              <h2><span className="step-number">3</span> Analysis Progress</h2>
-              <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${analysisStatus.percent}%` }}></div></div>
-              {!analysisStatus.result && <p className="status-message">{analysisStatus.message}</p>}
-              {analysisStatus.error && <p className="error-message">{analysisStatus.error}</p>}
-              {analysisStatus.result && (<div className="result-container"><h4>Analysis Report:</h4><div className="report-content">{analysisStatus.result}</div></div>)}
-              {(!isLoading) && (<button className="reset-button" onClick={handleReset}>Start New Analysis</button>)}
+              <h2 onClick={() => toggleSection('analysis')}><span className="step-number">3</span> Analysis Progress</h2>
+              {openSection === 'analysis' && (
+                <>
+                  <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${analysisStatus.percent}%` }}></div></div>
+                  {!analysisStatus.result && <p className="status-message">{analysisStatus.message}</p>}
+                  {analysisStatus.error && <p className="error-message">{analysisStatus.error}</p>}
+                  {analysisStatus.result && (
+                    <div className="result-container">
+                      <h4>Analysis Report:</h4>
+                      <div className="report-content">{analysisStatus.result}</div>
+                    </div>
+                  )}
+                  {!isLoading && (<button className="reset-button" onClick={handleReset}>Start New Analysis</button>)}
+                </>
+              )}
             </div>
           )}
         </main>
