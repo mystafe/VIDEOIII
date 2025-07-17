@@ -206,7 +206,7 @@ function App() {
           </button>
         </header>
         <main className="App-main">
-          <div className="controls-card">
+          <div className={`controls-card ${openSection === 'config' ? 'open' : 'closed'}`}>
             <h2 onClick={() => toggleSection('config')}><span className="step-number">1</span> Configuration</h2>
             {openSection === 'config' && (
               <>
@@ -222,7 +222,7 @@ function App() {
                   {superMode && (
                     <>
                       <div className="form-group"><label htmlFor="total-batches">Total Batches (Max: {Math.min(maxBatchesAllowed, superMode ? 100 : 10)})</label><input id="total-batches" type="number" value={totalBatches} onChange={handleBatchChange} min="1" max={Math.min(maxBatchesAllowed, superMode ? 100 : 10)} disabled={isLoading || !selectedFile} /></div>
-                      <div className="form-group"><label htmlFor="seconds-per-batch">Seconds per Batch (Super Mode)</label><input id="seconds-per-batch" type="number" value={secondsPerBatch} onChange={handleSecondsChange} min="10" max="600" step="10" disabled={isLoading} /></div>
+                      <div className="form-group"><label htmlFor="seconds-per-batch">Batch Duration (seconds)</label><input id="seconds-per-batch" type="number" value={secondsPerBatch} onChange={handleSecondsChange} min="10" max="600" step="10" disabled={isLoading} /></div>
                       <div className="form-group"><label htmlFor="frame-interval">Frame Interval (sec)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(e.target.value)} min="1" disabled={isLoading} /></div>
                     </>
                   )}
@@ -233,7 +233,7 @@ function App() {
             )}
           </div>
 
-          <div className="controls-card">
+          <div className={`controls-card ${openSection === 'upload' ? 'open' : 'closed'}`}>
             <h2 onClick={() => toggleSection('upload')}><span className="step-number">2</span> Upload Video</h2>
             {openSection === 'upload' && (
               <>
@@ -257,7 +257,7 @@ function App() {
                   <div className="tooltip">
                     <p>Model: {selectedModel}</p>
                     <p>Batches: {totalBatches}</p>
-                    <p>Seconds/Batch: {secondsPerBatch}</p>
+                    <p>Batch Duration: {secondsPerBatch} seconds</p>
                     <p>Frame Interval: {frameInterval}</p>
                     <p>Type: {analysisType}</p>
                     <p>Language: {outputLanguage}</p>
@@ -269,7 +269,7 @@ function App() {
           </div>
 
           {(isLoading || analysisStatus.result || analysisStatus.error) && (
-            <div className="status-card">
+            <div className={`status-card ${openSection === 'analysis' ? 'open' : 'closed'}`}>
               <h2 onClick={() => toggleSection('analysis')}><span className="step-number">3</span> Analysis</h2>
               {openSection === 'analysis' && (
                 <>
