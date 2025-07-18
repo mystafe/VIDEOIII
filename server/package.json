@@ -5,9 +5,9 @@
   "main": "index.js",
   "scripts": {
     "prestart": "node ./version-info.js --update-package-json",
-    "start": "node --max-old-space-size=200 index.js",
+    "start": "node --max-old-space-size=512 index.js",
     "predev": "node ./version-info.js --update-package-json",
-    "dev": "nodemon --exec node --max-old-space-size=200 index.js"
+    "dev": "nodemon --exec node --max-old-space-size=512 index.js"
   },
   "keywords": [],
   "author": "",
