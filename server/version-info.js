@@ -1,6 +1,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { getClientInfo } = require('../client/version-info.js');
 
 function formatDate(date) {
   return `${String(date.getDate()).padStart(2, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
@@ -48,12 +49,15 @@ function getInfoForPath(targetPath, prefix) {
 function getVersionInfo() {
   try {
     return {
-      client: getInfoForPath(path.join(__dirname, '..', 'client'), '2'),
+      client: getClientInfo(),
       server: getInfoForPath(__dirname, '1'),
     };
   } catch (err) {
     console.error('Could not derive version from git:', err);
-    return { client: { lastModifyDate: null, version: null }, server: { lastModifyDate: null, version: null } };
+    return {
+      client: { lastModifyDate: null, version: null },
+      server: { lastModifyDate: null, version: null },
+    };
   }
 }
 
