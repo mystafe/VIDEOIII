@@ -8,7 +8,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { version } = require('./package.json');
+const { getVersionInfo } = require('./version-info.js');
 const config = require('./config.js');
 
 // Diğer modüllerimizi import ediyoruz
@@ -28,7 +28,8 @@ const PORT = process.env.PORT || 5001;
 app.use(cors());
 
 app.get('/', (req, res) => {
-  res.json({ version });
+  const info = getVersionInfo();
+  res.json(info);
 });
 
 // Yüklenen dosyalar için geçici bir klasör oluştur
