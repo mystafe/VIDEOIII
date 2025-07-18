@@ -61,6 +61,7 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
   const ffmpeg = require('fluent-ffmpeg');
   let finalCumulativeAnalysis = "";
   const uploadedFileNames = [];
+  let processedBatches = 0;
 
   const tempFolders = {
     frames: path.join(__dirname, config.FRAMES_FOLDER),
@@ -98,24 +99,32 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
         .run();
     });
 
-    await new Promise((resolve, reject) => {
-      ffmpeg(videoPath).inputOptions([`-ss ${startTimeSeconds}`]).outputOptions([`-t ${secondsPerBatch}`])
-        .output(audioChunkPath).noVideo().audioCodec('libmp3lame')
+    let audioFile = null;
+    let audioExtractionFailed = false;
+    await new Promise((resolve) => {
+      ffmpeg(videoPath)
+        .inputOptions([`-ss ${startTimeSeconds}`])
+        .outputOptions([`-t ${secondsPerBatch}`])
+        .output(audioChunkPath)
+        .noVideo()
+        .audioCodec('libmp3lame')
         .on('end', resolve)
-        .on('error', (err) => {
-          send({ type: 'error', message: `FFmpeg audio extraction error: ${err.message}` });
-          reject(err);
+        .on('error', () => {
+          audioExtractionFailed = true;
+          send({ type: 'status', message: uiTexts.noAudioStream });
+          resolve();
         })
         .run();
     });
-
-    const audioFile = await uploadFileToGemini(audioChunkPath, "audio/mp3", onProgressUpdate);
-    if (!audioFile) {
-      send({ type: 'error', message: uiTexts.fileUploadError });
-      continue;
+    if (!audioExtractionFailed) {
+      audioFile = await uploadFileToGemini(audioChunkPath, "audio/mp3", onProgressUpdate);
+      if (!audioFile) {
+        send({ type: 'error', message: uiTexts.fileUploadError });
+      } else {
+        uploadedFileNames.push(audioFile.name);
+      }
+      await fsPromises.unlink(audioChunkPath).catch(() => {});
     }
-    uploadedFileNames.push(audioFile.name);
-    await fsPromises.unlink(audioChunkPath).catch(() => {});
 
     const frameFiles = (await fsPromises.readdir(tempFolders.frames)).filter(f => f.startsWith(`batch_${currentBatch}`));
     const imageParts = [];
@@ -141,8 +150,11 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
       promptText = `${languageInstruction}\n\nWe are continuing our analysis... (Önceki cevaptaki tam güncelleme prompt'u)`;
     }
 
-    const audioPart = { fileData: { mimeType: audioFile.mimeType, fileUri: audioFile.uri } };
-    const promptParts = [promptText, ...imageParts, audioPart];
+    const promptParts = [promptText, ...imageParts];
+    if (audioFile) {
+      const audioPart = { fileData: { mimeType: audioFile.mimeType, fileUri: audioFile.uri } };
+      promptParts.push(audioPart);
+    }
 
     let success = false;
     for (let attempt = 1; attempt <= config.MAX_RETRIES; attempt++) {
@@ -168,6 +180,7 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
     if (success) {
       const batchCompletePercent = Math.round(((currentBatch + 1) / totalBatches) * 100);
       send({ type: 'progress', message: `Batch ${currentBatch + 1}/${totalBatches} complete.`, percent: batchCompletePercent });
+      processedBatches += 1;
     } else {
       // Hata mesajı zaten gönderildi, döngüyü kırabiliriz.
       send({ type: 'error', message: uiTexts.analysisFailed(config.MAX_RETRIES) });
@@ -176,7 +189,7 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
   }
 
   // Sadece tüm batch'ler başarılı olduysa sonucu gönder
-  if (uploadedFileNames.length === totalBatches) {
+  if (processedBatches === totalBatches) {
     send({ type: 'result', data: finalCumulativeAnalysis });
   }
 
