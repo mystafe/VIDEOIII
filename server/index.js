@@ -28,8 +28,7 @@ const PORT = process.env.PORT || 5001;
 app.use(cors());
 
 app.get('/', (req, res) => {
-  const info = getVersionInfo();
-  res.json({ client: info.client });
+  res.json(getVersionInfo());
 });
 
 // detailed version info for internal use

@@ -46,11 +46,15 @@ function getInfoForPath(targetPath, prefix) {
   return { lastModifyDate: formatDate(date), version: formatVersion(date, prefix) };
 }
 
+function getServerInfo() {
+  return getInfoForPath(__dirname, '1');
+}
+
 function getVersionInfo() {
   try {
     return {
       client: getClientInfo(),
-      server: getInfoForPath(__dirname, '1'),
+      server: getServerInfo(),
     };
   } catch (err) {
     console.error('Could not derive version from git:', err);
@@ -61,4 +65,22 @@ function getVersionInfo() {
   }
 }
 
-module.exports = { getVersionInfo };
+function updatePackageVersion() {
+  const info = getServerInfo();
+  if (!info.version) return;
+
+  const pkgPath = path.join(__dirname, 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  pkg.version = info.version;
+  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+}
+
+if (require.main === module) {
+  if (process.argv.includes('--update-package-json')) {
+    updatePackageVersion();
+  } else {
+    console.log(getServerInfo().version);
+  }
+}
+
+module.exports = { getVersionInfo, getServerInfo, updatePackageVersion };

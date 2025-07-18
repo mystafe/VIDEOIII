@@ -1,12 +1,14 @@
 {
   "name": "server",
-  "version": "2.5.1",
+  "version": "1.0718.1452",
   "description": "",
   "main": "index.js",
-"scripts": {
-  "start": "node --max-old-space-size=200 index.js",
-  "dev": "nodemon --exec node --max-old-space-size=200 index.js"
-},
+  "scripts": {
+    "prestart": "node ./version-info.js --update-package-json",
+    "start": "node --max-old-space-size=200 index.js",
+    "predev": "node ./version-info.js --update-package-json",
+    "dev": "nodemon --exec node --max-old-space-size=200 index.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
