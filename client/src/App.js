@@ -45,7 +45,15 @@ function App() {
   useEffect(() => {
     fetch(`${defaultConfig.SOCKET}/`)
       .then(res => res.json())
-      .then(data => { if (data.version) setVersion(data.version); })
+      .then(data => {
+        if (data.client && data.client.version) {
+          setVersion(data.client.version);
+        } else if (data.clientVersion) {
+          setVersion(data.clientVersion);
+        } else if (data.version) {
+          setVersion(data.version);
+        }
+      })
       .catch(() => { /* ignore errors and keep default version */ });
   }, []);
 
