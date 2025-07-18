@@ -36,10 +36,18 @@ function App() {
   const [openSection, setOpenSection] = useState('config');
   const [showFileInfo, setShowFileInfo] = useState(false);
   const [showConfigInfo, setShowConfigInfo] = useState(false);
+  const [version, setVersion] = useState(defaultConfig.VERSION);
 
   useEffect(() => {
     document.body.className = theme === 'dark' ? 'dark-mode' : '';
   }, [theme]);
+
+  useEffect(() => {
+    fetch(`${defaultConfig.SOCKET}/`)
+      .then(res => res.json())
+      .then(data => { if (data.version) setVersion(data.version); })
+      .catch(() => { /* ignore errors and keep default version */ });
+  }, []);
 
   useEffect(() => {
     socket.on('connect', () => { setSocketId(socket.id); });
@@ -324,7 +332,7 @@ function App() {
           )}
         </main>
         <footer className="App-footer">
-          <p>Developed by Mustafa Evleksiz - Version {defaultConfig.VERSION}</p>
+          <p>Developed by Mustafa Evleksiz - Version {version}</p>
         </footer>
       </div>
     </div>
