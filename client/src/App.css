@@ -6,7 +6,16 @@ body { font-family: 'Inter', sans-serif; background-color: var(--background-colo
 .App-header { text-align: center; margin-bottom: 30px; }
 .App-header h1 { font-size: 2.5rem; font-weight: 700; margin: 0; color: var(--primary-color); user-select: none; }
 .App-header p { font-size: 1rem; color: var(--subtle-text-color); margin-top: 4px; }
-.controls-card, .status-card { background: var(--card-background); border-radius: 12px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 30px; animation: fadeIn 0.5s ease; transition: max-height 0.4s ease, padding 0.3s ease; overflow: hidden; }
+.controls-card, .status-card {
+  background: var(--card-background);
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  margin-bottom: 30px;
+  animation: fadeIn 0.5s ease;
+  transition: max-height 0.8s ease, padding 0.6s ease, opacity 0.6s ease;
+  overflow: hidden;
+}
 .controls-card.closed, .status-card.closed { max-height: 50px; padding: 15px 30px; opacity: 0.8; }
 .controls-card.open, .status-card.open { max-height: 2000px; border: 2px solid var(--primary-color); background-color: rgba(0,122,255,0.05); }
 h2 { font-size: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-top: 0; margin-bottom: 25px; display: flex; align-items: center; cursor: pointer; }
