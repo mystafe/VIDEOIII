@@ -29,7 +29,12 @@ app.use(cors());
 
 app.get('/', (req, res) => {
   const info = getVersionInfo();
-  res.json(info);
+  res.json({ client: info.client });
+});
+
+// detailed version info for internal use
+app.get('/version', (req, res) => {
+  res.json(getVersionInfo());
 });
 
 // Yüklenen dosyalar için geçici bir klasör oluştur
