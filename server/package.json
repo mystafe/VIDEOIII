@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
 "scripts": {
-  "start": "node --max-old-space-size=256 index.js",
-  "dev": "nodemon --exec node --max-old-space-size=256 index.js"
+  "start": "node --max-old-space-size=200 index.js",
+  "dev": "nodemon --exec node --max-old-space-size=200 index.js"
 },
   "keywords": [],
   "author": "",
