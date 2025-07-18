@@ -244,14 +244,15 @@ function App() {
         <header className="App-header">
           <h1 onClick={handleLogoClick}>VIDEOIII</h1>
           <p>Smart Video Analysis Platform</p>
-          <button
-            className="theme-toggle"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            disabled={!superMode}
-            title={!superMode ? 'Activate super mode to toggle theme' : ''}
-          >
-            {theme === 'dark' ? '☀️' : '🌙'}
-          </button>
+          {superMode && (
+            <button
+              className="theme-toggle"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              title="Toggle theme"
+            >
+              {theme === 'dark' ? '☀️' : '🌙'}
+            </button>
+          )}
         </header>
         <main className="App-main">
           <div className={`controls-card ${openSection === 'config' ? 'open' : 'closed'}`}>
