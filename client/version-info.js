@@ -44,8 +44,22 @@ function getClientInfo() {
   return { lastModifyDate: formatDate(date), version: formatVersion(date) };
 }
 
-if (require.main === module) {
-  console.log(getClientInfo().version);
+function updatePackageVersion() {
+  const info = getClientInfo();
+  if (!info.version) return;
+
+  const pkgPath = path.join(__dirname, 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  pkg.version = info.version;
+  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
 }
 
-module.exports = { getClientInfo };
+if (require.main === module) {
+  if (process.argv.includes('--update-package-json')) {
+    updatePackageVersion();
+  } else {
+    console.log(getClientInfo().version);
+  }
+}
+
+module.exports = { getClientInfo, updatePackageVersion };
