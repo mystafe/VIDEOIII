@@ -12,7 +12,7 @@ body { font-family: 'Inter', sans-serif; background-color: var(--background-colo
   padding: 30px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.05);
   margin-bottom: 30px;
-  animation: fadeIn 0.5s ease;
+  animation: slideFadeIn 0.5s ease;
   transition: max-height 0.8s ease, padding 0.6s ease, opacity 0.6s ease;
   overflow: hidden;
 }
@@ -55,7 +55,7 @@ input[type="file"] { display: none; }
   padding: 10px;
   margin-top: 10px;
   font-size: 0.9rem;
-  animation: fadeIn 0.3s ease;
+  animation: slideFadeIn 0.3s ease;
 }
 .App-footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid var(--border-color); text-align: center; }
 .App-footer p { color: var(--subtle-text-color); font-size: 0.9rem; }
@@ -103,14 +103,18 @@ body.dark-mode .form-group label {
   font-size: 0.8rem;
 }
 
-@keyframes fadeIn {
-  from {
+@keyframes slideFadeIn {
+  0% {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(20px) scale(0.95);
   }
-  to {
+  60% {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(-3px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
