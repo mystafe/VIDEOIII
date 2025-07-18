@@ -83,11 +83,21 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
 
     const startTimeSeconds = currentBatch * secondsPerBatch;
     const audioChunkPath = path.join(tempFolders.audio, `audio_chunk_${currentBatch}.mp3`);
-    const framePattern = path.join(tempFolders.frames, `batch_${currentBatch}_frame-%d.png`);
+    const framePattern = path.join(
+      tempFolders.frames,
+      `batch_${currentBatch}_frame-%d.${config.FRAME_FORMAT}`
+    );
 
     await new Promise((resolve, reject) => {
-      ffmpeg(videoPath).inputOptions([`-ss ${startTimeSeconds}`]).outputOptions([`-t ${secondsPerBatch}`])
-        .output(framePattern).outputOptions([`-vf fps=1/${frameInterval}`]).noAudio()
+      ffmpeg(videoPath)
+        .inputOptions([`-ss ${startTimeSeconds}`])
+        .outputOptions([
+          `-t ${secondsPerBatch}`,
+          `-vf fps=1/${frameInterval},scale=${config.FRAME_WIDTH}:-1`,
+          `-qscale:v ${config.FRAME_QUALITY}`,
+        ])
+        .output(framePattern)
+        .noAudio()
         .on('end', resolve)
         .on('error', err => reject(new Error(`Frame extraction error: ${err.message}`)))
         .run();
@@ -107,7 +117,8 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
     const frameFiles = (await fsPromises.readdir(tempFolders.frames)).filter(f => f.startsWith(`batch_${currentBatch}`));
     const imageParts = [];
     for (const file of frameFiles) {
-      const part = fileToGenerativePart(path.join(tempFolders.frames, file), "image/png");
+      const mimeType = config.FRAME_FORMAT === 'png' ? 'image/png' : 'image/jpeg';
+      const part = fileToGenerativePart(path.join(tempFolders.frames, file), mimeType);
       if (part) imageParts.push(part);
     }
 
