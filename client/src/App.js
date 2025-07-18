@@ -200,14 +200,14 @@ function App() {
       <div className="container">
         <header className="App-header">
           <h1 onClick={handleLogoClick}>VIDEOIII</h1>
-          <p>Smart Video Analysis Platform VIDEOIII</p>
+          <p>Smart Video Analysis Platform</p>
           <button className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
         </header>
         <main className="App-main">
           <div className={`controls-card ${openSection === 'config' ? 'open' : 'closed'}`}>
-            <h2 onClick={() => toggleSection('config')}><span className="step-number">1</span> Configuration</h2>
+            <h2 onClick={() => toggleSection('config')}><span className="step-number">1</span> Configuration<span className="accordion-icon">{openSection === 'config' ? '▲' : '▼'}</span></h2>
             {openSection === 'config' && (
               <>
                 <div className="form-grid">
@@ -234,7 +234,7 @@ function App() {
           </div>
 
           <div className={`controls-card ${openSection === 'upload' ? 'open' : 'closed'}`}>
-            <h2 onClick={() => toggleSection('upload')}><span className="step-number">2</span> Upload Video</h2>
+            <h2 onClick={() => toggleSection('upload')}><span className="step-number">2</span> Upload Video<span className="accordion-icon">{openSection === 'upload' ? '▲' : '▼'}</span></h2>
             {openSection === 'upload' && (
               <>
                 <input id="file-upload" type="file" accept="video/*" onChange={handleFileChange} disabled={isLoading} ref={fileInputRef} />
@@ -270,7 +270,7 @@ function App() {
 
           {(isLoading || analysisStatus.result || analysisStatus.error) && (
             <div className={`status-card ${openSection === 'analysis' ? 'open' : 'closed'}`}>
-              <h2 onClick={() => toggleSection('analysis')}><span className="step-number">3</span> Analysis</h2>
+              <h2 onClick={() => toggleSection('analysis')}><span className="step-number">3</span> Analysis<span className="accordion-icon">{openSection === 'analysis' ? '▲' : '▼'}</span></h2>
               {openSection === 'analysis' && (
                 <>
                   <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${analysisStatus.percent}%` }}></div></div>

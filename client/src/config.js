@@ -37,5 +37,5 @@ export const DEFAULT_MODEL = "speedy";
 export const config = {
   MODEL_NAME: "gemini-2.5-flash",
   SOCKET: "https://videoii-server.onrender.com",
-  VERSION: "2.5.0",
+  VERSION: "2.5.1",
 };
