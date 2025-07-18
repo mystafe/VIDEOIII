@@ -44,9 +44,9 @@ async function uploadFileToGemini(filePath, mimeType, onProgressUpdate) {
   }
 }
 
-function fileToGenerativePart(filePath, mimeType) {
+async function fileToGenerativePart(filePath, mimeType) {
   try {
-    const data = fs.readFileSync(filePath).toString("base64");
+    const data = await fsPromises.readFile(filePath, { encoding: "base64" });
     return { inlineData: { data, mimeType } };
   } catch (error) {
     console.error(`Error reading file for generative part: ${filePath}.`, error);
@@ -70,12 +70,10 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
 
   send({ type: 'status', message: uiTexts.processing(path.basename(videoPath), config.MODEL_NAME, totalBatches, secondsPerBatch) });
 
-  for (const folder of Object.values(tempFolders)) {
-    if (!fs.existsSync(folder)) fs.mkdirSync(folder);
-    else {
-      fs.readdirSync(folder).forEach(file => { try { fs.unlinkSync(path.join(folder, file)); } catch (err) { } });
-    }
-  }
+  await Promise.all(Object.values(tempFolders).map(async (folder) => {
+    await fsPromises.rm(folder, { recursive: true, force: true }).catch(() => {});
+    await fsPromises.mkdir(folder, { recursive: true });
+  }));
 
   const model = genAI.getGenerativeModel({ model: config.MODEL_NAME });
   const chat = model.startChat({ history: [] });
@@ -129,7 +127,7 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
     const frameFiles = (await fsPromises.readdir(tempFolders.frames)).filter(f => f.startsWith(`batch_${currentBatch}`));
     const imageParts = [];
     for (const file of frameFiles) {
-      const part = fileToGenerativePart(path.join(tempFolders.frames, file), "image/png");
+      const part = await fileToGenerativePart(path.join(tempFolders.frames, file), "image/png");
       if (part) imageParts.push(part);
       await fsPromises.unlink(path.join(tempFolders.frames, file)).catch(() => {});
     }
@@ -200,10 +198,7 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
     try { await axios.delete(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GOOGLE_API_KEY}`); } catch (err) { }
   }
   for (const folder of Object.values(tempFolders)) {
-    if (fs.existsSync(folder)) {
-      fs.readdirSync(folder).forEach(file => { try { fs.unlinkSync(path.join(folder, file)); } catch (err) { } });
-      try { fs.rmdirSync(folder); } catch (err) { }
-    }
+    await fsPromises.rm(folder, { recursive: true, force: true }).catch(() => {});
   }
   send({ type: 'status', message: uiTexts.cleanupComplete });
 }
