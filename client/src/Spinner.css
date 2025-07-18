@@ -2,16 +2,17 @@
 .spinner {
   border: 4px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
-  border-top: 4px solid #fff;
-  width: 16px;
-  height: 16px;
-  animation: spin 1s linear infinite;
+  border-top-color: var(--primary-color);
+  width: 18px;
+  height: 18px;
+  animation: spinScale 1s ease-in-out infinite;
   display: inline-block;
   vertical-align: middle;
   margin-right: 8px;
 }
 
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+@keyframes spinScale {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.2); }
+  100% { transform: rotate(360deg) scale(1); }
 }
