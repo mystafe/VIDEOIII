@@ -3,11 +3,11 @@ const fs = require('fs');
 const path = require('path');
 
 function formatDate(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  return `${String(date.getDate()).padStart(2, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-function formatVersion(date) {
-  return `${date.getFullYear() % 10}.${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}.${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`;
+function formatVersion(date, prefix) {
+  return `${prefix}.${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}.${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
 function tryGetGitDate(targetPath) {
@@ -36,17 +36,20 @@ function getPackageVersion(targetPath) {
   }
 }
 
-function getInfoForPath(targetPath) {
+function getInfoForPath(targetPath, prefix) {
   const date = tryGetGitDate(targetPath) || getFsDate(targetPath);
-  const version = getPackageVersion(targetPath);
-  return { lastModifyDate: date ? formatDate(date) : null, version };
+  if (!date) {
+    const fallback = getPackageVersion(targetPath);
+    return { lastModifyDate: null, version: fallback };
+  }
+  return { lastModifyDate: formatDate(date), version: formatVersion(date, prefix) };
 }
 
 function getVersionInfo() {
   try {
     return {
-      client: getInfoForPath(path.join(__dirname, '..', 'client')),
-      server: getInfoForPath(__dirname),
+      client: getInfoForPath(path.join(__dirname, '..', 'client'), '2'),
+      server: getInfoForPath(__dirname, '1'),
     };
   } catch (err) {
     console.error('Could not derive version from git:', err);
