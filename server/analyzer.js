@@ -191,6 +191,8 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
   // Sadece tüm batch'ler başarılı olduysa sonucu gönder
   if (processedBatches === totalBatches) {
     send({ type: 'result', data: finalCumulativeAnalysis });
+  } else if (processedBatches === 0) {
+    send({ type: 'error', message: 'Video analiz edilemedi, daha uzun bir video seçiniz.' });
   }
 
   send({ type: 'status', message: uiTexts.cleanup });
