@@ -18,6 +18,12 @@ const config = {
   SECONDS_PER_BATCH: 60,
   FRAME_INTERVAL_SECONDS: 10,
 
+  // --- Görsel Çıktı Ayarları ---
+  // Daha düşük çözünürlük ve sıkıştırılmış JPEG formatı bellek kullanımını azalır.
+  FRAME_WIDTH: 320, // piksel
+  FRAME_FORMAT: 'jpg',
+  FRAME_QUALITY: 3,
+
   // --- Tekrar Deneme Mekanizması Ayarları ---
   MAX_RETRIES: 3,
   INITIAL_DELAY_MS: 2000,
