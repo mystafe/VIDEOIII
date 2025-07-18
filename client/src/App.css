@@ -25,6 +25,7 @@ input[type="file"] { display: none; }
 .progress-bar-container { width: 100%; background-color: #e0e0e0; border-radius: 4px; margin: 20px 0; overflow: hidden; }
 .progress-bar { height: 8px; background-color: var(--primary-color); border-radius: 4px; transition: width 0.4s ease-in-out; }
 .error-message { color: var(--error-color); font-weight: 500; }
+.time-remaining { color: var(--subtle-text-color); font-size: 0.9rem; margin-top: 8px; }
 .result-container { background: #2d2d2d; color: #e0e0e0; border-radius: 8px; padding: 20px; margin-top: 20px; text-align: left; max-height: 500px; overflow-y: auto; font-size: 0.9rem; }
 .report-content { white-space: pre-wrap; word-wrap: break-word; font-family: 'Courier New', Courier, monospace; }
 .reset-button { width: 100%; padding: 15px; font-size: 1.1rem; font-weight: 700; color: white; background-color: var(--success-color); border: none; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; margin-top: 30px; }

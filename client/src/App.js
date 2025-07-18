@@ -29,6 +29,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [socketId, setSocketId] = useState('');
   const [maxBatchesAllowed, setMaxBatchesAllowed] = useState(10);
+  const [analysisStartTime, setAnalysisStartTime] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(null);
   const fileInputRef = useRef(null);
   const videoRef = useRef(null);
   const [openSection, setOpenSection] = useState('config');
@@ -42,9 +44,30 @@ function App() {
   useEffect(() => {
     socket.on('connect', () => { setSocketId(socket.id); });
     socket.on('progressUpdate', (data) => {
-      if (data.type === 'status' || data.type === 'progress') { setAnalysisStatus(prev => ({ ...prev, message: data.message, percent: data.percent === undefined ? prev.percent : data.percent, error: '' })); }
-      if (data.type === 'result') { setAnalysisStatus(prev => ({ ...prev, message: 'Analysis complete!', result: data.data, percent: 100, error: '' })); setIsLoading(false); }
-      if (data.type === 'error') { setAnalysisStatus(prev => ({ ...prev, message: '', error: data.message, percent: 0 })); setIsLoading(false); }
+      if (data.type === 'status' || data.type === 'progress') {
+        setAnalysisStatus(prev => ({
+          ...prev,
+          message: data.message,
+          percent: data.percent === undefined ? prev.percent : data.percent,
+          error: ''
+        }));
+        if (analysisStartTime && data.percent !== undefined && data.percent > 0) {
+          const elapsed = (Date.now() - analysisStartTime) / 1000;
+          const estimatedTotal = elapsed / (data.percent / 100);
+          const remaining = Math.max(estimatedTotal - elapsed, 0);
+          setTimeLeft(Math.round(remaining));
+        }
+      }
+      if (data.type === 'result') {
+        setAnalysisStatus(prev => ({ ...prev, message: 'Analysis complete!', result: data.data, percent: 100, error: '' }));
+        setIsLoading(false);
+        setTimeLeft(null);
+      }
+      if (data.type === 'error') {
+        setAnalysisStatus(prev => ({ ...prev, message: '', error: data.message, percent: 0 }));
+        setIsLoading(false);
+        setTimeLeft(null);
+      }
     });
     return () => { socket.off('connect'); socket.off('progressUpdate'); };
   }, []);
@@ -102,6 +125,8 @@ function App() {
   const handleUpload = async () => {
     if (!selectedFile || !socketId) { setAnalysisStatus({ ...analysisStatus, error: 'Please select a file and wait for server connection.' }); return; }
     setIsLoading(true);
+    setAnalysisStartTime(Date.now());
+    setTimeLeft(null);
     setOpenSection('analysis');
     setAnalysisStatus({ message: 'Uploading video...', percent: 0, result: '', error: '' });
     const durationNeeded = totalBatches * secondsPerBatch;
@@ -132,6 +157,8 @@ function App() {
   };
   const handleReset = () => {
     setIsLoading(false);
+    setAnalysisStartTime(null);
+    setTimeLeft(null);
     setSelectedFile(null);
     setPreviewUrl(null);
     setAnalysisStatus(getInitialAnalysisState());
@@ -279,6 +306,9 @@ function App() {
               {openSection === 'analysis' && (
                 <>
                   <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${analysisStatus.percent}%` }}></div></div>
+                  {isLoading && timeLeft !== null && (
+                    <p className="time-remaining">Tahmini kalan süre: {timeLeft} sn</p>
+                  )}
                   {!analysisStatus.result && <p className="status-message">{analysisStatus.message}</p>}
                   {analysisStatus.error && <p className="error-message">{analysisStatus.error}</p>}
                   {analysisStatus.result && (
