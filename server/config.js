@@ -10,6 +10,8 @@ const config = {
   VIDEO_PATH: 'Input/sample-video.mp4',
   FRAMES_FOLDER: 'temp_frames',
   AUDIO_FOLDER: 'temp_audio',
+  // Upload limit for incoming files (in megabytes)
+  MAX_UPLOAD_SIZE_MB: 250,
 
   // --- Batch (Parça) Analiz Ayarları ---
   TOTAL_BATCHES: 1,

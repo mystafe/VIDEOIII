@@ -9,6 +9,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { version } = require('./package.json');
+const config = require('./config.js');
 
 // Diğer modüllerimizi import ediyoruz
 const { analyzeVideoInBatches } = require('./analyzer.js');
@@ -41,14 +42,29 @@ const storage = multer.diskStorage({
     cb(null, uniqueSuffix + path.extname(file.originalname));
   }
 });
-const upload = multer({ storage: storage });
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: config.MAX_UPLOAD_SIZE_MB * 1024 * 1024 }
+});
 
 io.on('connection', (socket) => {
   console.log('✔ User connected:', socket.id);
   socket.on('disconnect', () => console.log('✖ User disconnected:', socket.id));
 });
 
-app.post('/api/analyze', upload.single('video'), async (req, res) => {
+app.post('/api/analyze', (req, res, next) => {
+  upload.single('video')(req, res, function (err) {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: `File exceeds ${config.MAX_UPLOAD_SIZE_MB}MB limit.` });
+      }
+      return res.status(400).json({ error: err.message });
+    } else if (err) {
+      return res.status(400).json({ error: 'File upload error.' });
+    }
+    next();
+  });
+}, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Video file not found.' });
 
   const settings = {
