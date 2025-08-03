@@ -77,6 +77,7 @@ app.post('/api/analyze', (req, res, next) => {
     analysisType: req.body.analysisType,
     outputLanguage: req.body.outputLanguage,
     socketId: req.body.socketId,
+    aiModule: req.body.aiModule || 'gemini',
     totalBatches: parseInt(req.body.totalBatches, 10) || 1,
     secondsPerBatch: parseInt(req.body.secondsPerBatch, 10) || 60,
     frameInterval: parseInt(req.body.frameInterval, 10) || 10,
@@ -127,6 +128,7 @@ app.post('/api/analyze-browser', (req, res, next) => {
     analysisType: req.body.analysisType,
     outputLanguage: req.body.outputLanguage,
     socketId: req.body.socketId,
+    aiModule: req.body.aiModule || 'gemini',
   };
   if (!settings.socketId) return res.status(400).json({ error: 'Socket ID not found.' });
   res.status(202).json({ message: 'Analysis request accepted.' });

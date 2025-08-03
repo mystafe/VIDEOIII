@@ -11,11 +11,11 @@ const config = {
   FRAMES_FOLDER: 'temp_frames',
   AUDIO_FOLDER: 'temp_audio',
   // Upload limit for incoming files (in megabytes)
-  MAX_UPLOAD_SIZE_MB: 250,
+  MAX_UPLOAD_SIZE_MB: 500,
 
   // --- Batch (Parça) Analiz Ayarları ---
   TOTAL_BATCHES: 1,
-  SECONDS_PER_BATCH: 60,
+  SECONDS_PER_BATCH: 120,
   FRAME_INTERVAL_SECONDS: 10,
 
   // --- Görsel Çıktı Ayarları ---
