@@ -152,8 +152,16 @@ function App() {
     }
   }, [selectedModel, analysisType, superMode, useServer]);
   const handleUpload = async () => {
-    if (!selectedFile || !socketId) {
-      setAnalysisStatus({ ...analysisStatus, error: 'Please select a file and wait for server connection.' });
+    if (!selectedFile) {
+      const msg = 'Please select a file before starting analysis.';
+      setAnalysisStatus({ ...analysisStatus, error: msg });
+      setLogs(prev => [...prev, msg]);
+      return;
+    }
+    if (!socketId) {
+      const msg = 'Server connection not established yet.';
+      setAnalysisStatus({ ...analysisStatus, error: msg });
+      setLogs(prev => [...prev, msg]);
       return;
     }
     setIsLoading(true);
@@ -279,6 +287,16 @@ function App() {
   const processVideoOnDevice = (file, interval, maxDuration, onProgress) => {
     return new Promise((resolve, reject) => {
       try {
+        if (!file || !file.type.startsWith('video')) {
+          const msg = 'Selected file is not a valid video.';
+          onProgress && onProgress(0, msg);
+          return reject(new Error(msg));
+        }
+        if (typeof MediaRecorder === 'undefined') {
+          const msg = 'MediaRecorder API is not supported.';
+          onProgress && onProgress(0, msg);
+          return reject(new Error(msg));
+        }
         const video = document.createElement('video');
         video.src = URL.createObjectURL(file);
         video.muted = true;
@@ -286,22 +304,42 @@ function App() {
         const ctx = canvas.getContext('2d');
         const frames = [];
         let audioChunks = [];
+        const captureStream = video.captureStream || video.mozCaptureStream || video.webkitCaptureStream;
+        if (!captureStream) {
+          const msg = 'Stream capture is not supported in this browser.';
+          onProgress && onProgress(0, msg);
+          return reject(new Error(msg));
+        }
         video.onloadedmetadata = () => {
+          onProgress && onProgress(0, 'Metadata loaded');
           const duration = Math.min(video.duration, maxDuration);
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
-          const stream = video.captureStream();
-          const audioStream = new MediaStream(stream.getAudioTracks());
+          const stream = captureStream.call(video);
+          const audioTracks = stream.getAudioTracks();
+          const audioStream = new MediaStream(audioTracks);
           const recorder = new MediaRecorder(audioStream);
           recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+          recorder.onerror = (e) => {
+            console.error('Recorder error', e);
+            onProgress && onProgress(0, 'Audio recorder error');
+            reject(e);
+          };
+          recorder.onstart = () => onProgress && onProgress(0, 'Audio recording started');
           let lastPercent = 0;
           const capture = () => {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            canvas.toBlob((blob) => { if (blob) frames.push(blob); }, 'image/jpeg', 0.7);
-            const percent = (video.currentTime / duration) * 100;
-            if (onProgress && percent - lastPercent >= 1) {
-              lastPercent = percent;
-              onProgress(percent, 'Capturing frames');
+            try {
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              canvas.toBlob((blob) => { if (blob) frames.push(blob); else console.warn('Frame capture returned null blob'); }, 'image/jpeg', 0.7);
+              const percent = (video.currentTime / duration) * 100;
+              if (onProgress && percent - lastPercent >= 1) {
+                lastPercent = percent;
+                onProgress(percent, 'Capturing frames');
+              }
+            } catch (e) {
+              console.error('Frame capture error', e);
+              onProgress && onProgress(0, 'Frame capture error');
+              reject(e);
             }
           };
           onProgress && onProgress(0, 'Starting device processing');
@@ -316,18 +354,24 @@ function App() {
           video.onpause = () => {
             clearInterval(intervalId);
             recorder.stop();
+            onProgress && onProgress(0, 'Video paused, stopping recorder');
           };
           recorder.start();
           video.play();
           setTimeout(() => video.pause(), duration * 1000);
           recorder.onstop = () => {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const audioBlob = audioChunks.length ? new Blob(audioChunks, { type: 'audio/webm' }) : null;
             onProgress && onProgress(100, 'Device processing complete');
             resolve({ audioBlob, frames });
           };
         };
-        video.onerror = (e) => reject(e);
+        video.onerror = (e) => {
+          console.error('Video element error', e);
+          onProgress && onProgress(0, 'Video element error');
+          reject(e);
+        };
       } catch (err) {
+        console.error('Device processing error', err);
         reject(err);
       }
     });

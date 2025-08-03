@@ -71,6 +71,7 @@ app.post('/api/analyze', (req, res, next) => {
   });
 }, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Video file not found.' });
+  console.log(`Incoming /api/analyze request: ${req.file.originalname} (${req.file.size} bytes)`);
 
   const settings = {
     analysisType: req.body.analysisType,
@@ -82,7 +83,6 @@ app.post('/api/analyze', (req, res, next) => {
   };
 
   if (!settings.socketId) return res.status(400).json({ error: 'Socket ID not found.' });
-
   console.log(`--- Analysis request received (Socket ID: ${settings.socketId}) ---`);
   res.status(202).json({ message: 'Analysis request accepted.' });
 
@@ -132,6 +132,10 @@ app.post('/api/analyze-browser', (req, res, next) => {
   res.status(202).json({ message: 'Analysis request accepted.' });
   const framePaths = (req.files?.frames || []).map(f => f.path);
   const audioPath = req.files?.audio ? req.files.audio[0].path : null;
+  console.log(`Incoming /api/analyze-browser request: ${framePaths.length} frame(s), audio: ${audioPath ? 'yes' : 'no'}`);
+  if (framePaths.length === 0) {
+    return res.status(400).json({ error: 'No frames received.' });
+  }
   try {
     const progressCallback = {
       send: (progressUpdate) => {
