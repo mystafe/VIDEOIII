@@ -12,7 +12,7 @@ const { getVersionInfo } = require('./version-info.js');
 const config = require('./config.js');
 
 // Diğer modüllerimizi import ediyoruz
-const { analyzeVideoInBatches } = require('./analyzer.js');
+const { analyzeVideoInBatches, analyzeUploadedMedia } = require('./analyzer.js');
 const UI_TEXTS = require('./ui-texts.js'); // Arayüz metinlerini ayrı dosyadan alıyoruz
 
 const app = express();
@@ -107,6 +107,42 @@ app.post('/api/analyze', (req, res, next) => {
       if (err) console.error("Could not delete temporary uploaded video:", err);
       else console.log("Temporary uploaded video deleted:", req.file.path);
     });
+  }
+});
+
+app.post('/api/analyze-browser', (req, res, next) => {
+  upload.fields([
+    { name: 'audio', maxCount: 1 },
+    { name: 'frames', maxCount: 1000 },
+  ])(req, res, function (err) {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({ error: err.message });
+    } else if (err) {
+      return res.status(400).json({ error: 'File upload error.' });
+    }
+    next();
+  });
+}, async (req, res) => {
+  const settings = {
+    analysisType: req.body.analysisType,
+    outputLanguage: req.body.outputLanguage,
+    socketId: req.body.socketId,
+  };
+  if (!settings.socketId) return res.status(400).json({ error: 'Socket ID not found.' });
+  res.status(202).json({ message: 'Analysis request accepted.' });
+  const framePaths = (req.files?.frames || []).map(f => f.path);
+  const audioPath = req.files?.audio ? req.files.audio[0].path : null;
+  try {
+    const progressCallback = {
+      send: (progressUpdate) => {
+        io.to(settings.socketId).emit('progressUpdate', progressUpdate);
+      },
+      uiTexts: UI_TEXTS
+    };
+    await analyzeUploadedMedia(framePaths, audioPath, settings, progressCallback);
+  } catch (error) {
+    console.error('Error during analysis process:', error);
+    io.to(settings.socketId).emit('progressUpdate', { type: 'error', message: 'An unexpected error occurred on the server.' });
   }
 });
 
