@@ -38,6 +38,9 @@ function App() {
   const [showFileInfo, setShowFileInfo] = useState(false);
   const [showConfigInfo, setShowConfigInfo] = useState(false);
   const [version, setVersion] = useState(defaultConfig.VERSION);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const [logs, setLogs] = useState([]);
 
   useEffect(() => {
     document.body.className = theme === 'dark' ? 'dark-mode' : '';
@@ -68,6 +71,12 @@ function App() {
           percent: data.percent === undefined ? prev.percent : data.percent,
           error: ''
         }));
+        if (data.percent !== undefined) {
+          setProcessingProgress(data.percent);
+          setLogs(prev => [...prev, `${data.message} (${data.percent}%)`]);
+        } else {
+          setLogs(prev => [...prev, data.message]);
+        }
         if (analysisStartTime && data.percent !== undefined && data.percent > 0) {
           const elapsed = (Date.now() - analysisStartTime) / 1000;
           const estimatedTotal = elapsed / (data.percent / 100);
@@ -77,11 +86,14 @@ function App() {
       }
       if (data.type === 'result') {
         setAnalysisStatus(prev => ({ ...prev, message: 'Analysis complete!', result: data.data, percent: 100, error: '' }));
+        setProcessingProgress(100);
+        setLogs(prev => [...prev, 'Analysis complete!']);
         setIsLoading(false);
         setTimeLeft(null);
       }
       if (data.type === 'error') {
         setAnalysisStatus(prev => ({ ...prev, message: '', error: data.message, percent: 0 }));
+        setLogs(prev => [...prev, `Error: ${data.message}`]);
         setIsLoading(false);
         setTimeLeft(null);
       }
@@ -148,9 +160,13 @@ function App() {
     setAnalysisStartTime(Date.now());
     setTimeLeft(null);
     setOpenSection('analysis');
+    setUploadProgress(0);
+    setProcessingProgress(0);
+    setLogs([]);
 
     if (useServer) {
       setAnalysisStatus({ message: 'Uploading video...', percent: 0, result: '', error: '' });
+      setLogs(prev => [...prev, 'Uploading video to server...']);
       const durationNeeded = totalBatches * secondsPerBatch;
       let uploadFile = selectedFile;
       if (videoRef.current && durationNeeded < videoRef.current.duration) {
@@ -169,26 +185,49 @@ function App() {
       formData.append('secondsPerBatch', secondsPerBatch);
       formData.append('frameInterval', frameInterval);
       try {
-        const response = await axios.post('https://videoii-server.onrender.com/api/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+        const response = await axios.post('https://videoii-server.onrender.com/api/analyze', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (e) => {
+            const percent = Math.round((e.loaded * 100) / e.total);
+            setUploadProgress(percent);
+            setLogs(prev => [...prev, `Upload ${percent}%`]);
+          }
+        });
         setAnalysisStatus(prev => ({ ...prev, message: response.data.message }));
+        setLogs(prev => [...prev, 'Upload complete, processing started...']);
+        setProcessingProgress(0);
       } catch (error) {
         setAnalysisStatus({ ...analysisStatus, error: error.response?.data?.error || 'An upload error occurred.' });
         setIsLoading(false);
       }
     } else {
       setAnalysisStatus({ message: 'Processing on device...', percent: 0, result: '', error: '' });
+      setLogs(prev => [...prev, 'Processing on device...']);
       try {
         const maxDur = MODELS[selectedModel].maxDuration;
         const duration = videoRef.current ? Math.min(videoRef.current.duration, maxDur) : maxDur;
-        const { audioBlob, frames } = await processVideoOnDevice(selectedFile, frameInterval, duration);
+        const { audioBlob, frames } = await processVideoOnDevice(selectedFile, frameInterval, duration, (percent, msg) => {
+          setProcessingProgress(Math.round(percent));
+          setLogs(prev => [...prev, `${msg} (${Math.round(percent)}%)`]);
+        });
+        setLogs(prev => [...prev, 'Device processing finished. Uploading to server...']);
+        setProcessingProgress(0);
         const formData = new FormData();
         frames.forEach((blob, idx) => formData.append('frames', blob, `frame_${idx}.jpg`));
         if (audioBlob) formData.append('audio', audioBlob, 'audio.webm');
         formData.append('analysisType', analysisType);
         formData.append('outputLanguage', outputLanguage);
         formData.append('socketId', socketId);
-        const response = await axios.post('https://videoii-server.onrender.com/api/analyze-browser', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+        const response = await axios.post('https://videoii-server.onrender.com/api/analyze-browser', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (e) => {
+            const percent = Math.round((e.loaded * 100) / e.total);
+            setUploadProgress(percent);
+            setLogs(prev => [...prev, `Upload ${percent}%`]);
+          }
+        });
         setAnalysisStatus(prev => ({ ...prev, message: response.data.message }));
+        setLogs(prev => [...prev, 'Upload complete, waiting for server analysis...']);
       } catch (error) {
         setAnalysisStatus({ ...analysisStatus, error: error.response?.data?.error || 'An upload error occurred.' });
         setIsLoading(false);
@@ -237,7 +276,7 @@ function App() {
   const toggleFileInfo = () => setShowFileInfo(v => !v);
   const toggleConfigInfo = () => setShowConfigInfo(v => !v);
 
-  const processVideoOnDevice = (file, interval, maxDuration) => {
+  const processVideoOnDevice = (file, interval, maxDuration, onProgress) => {
     return new Promise((resolve, reject) => {
       try {
         const video = document.createElement('video');
@@ -255,10 +294,17 @@ function App() {
           const audioStream = new MediaStream(stream.getAudioTracks());
           const recorder = new MediaRecorder(audioStream);
           recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+          let lastPercent = 0;
           const capture = () => {
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             canvas.toBlob((blob) => { if (blob) frames.push(blob); }, 'image/jpeg', 0.7);
+            const percent = (video.currentTime / duration) * 100;
+            if (onProgress && percent - lastPercent >= 1) {
+              lastPercent = percent;
+              onProgress(percent, 'Capturing frames');
+            }
           };
+          onProgress && onProgress(0, 'Starting device processing');
           capture();
           const intervalId = setInterval(() => {
             if (video.currentTime >= duration) {
@@ -276,6 +322,7 @@ function App() {
           setTimeout(() => video.pause(), duration * 1000);
           recorder.onstop = () => {
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            onProgress && onProgress(100, 'Device processing complete');
             resolve({ audioBlob, frames });
           };
         };
@@ -404,11 +451,19 @@ function App() {
               <h2 onClick={() => toggleSection('analysis')}><span className="step-number">3</span> Analysis<span className="accordion-icon">{openSection === 'analysis' ? '▲' : '▼'}</span></h2>
               {openSection === 'analysis' && (
                 <>
-                  <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${analysisStatus.percent}%` }}></div></div>
+                  <p>Upload</p>
+                  <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${uploadProgress}%` }}></div></div>
+                  <p>Processing</p>
+                  <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${processingProgress}%` }}></div></div>
                   {isLoading && timeLeft !== null && (
                     <p className="time-remaining">Tahmini kalan süre: {timeLeft} sn</p>
                   )}
                   {!analysisStatus.result && <p className="status-message">{analysisStatus.message}</p>}
+                  {logs.length > 0 && (
+                    <div className="log-container">
+                      {logs.map((log, idx) => (<div key={idx} className="log-entry">{log}</div>))}
+                    </div>
+                  )}
                   {analysisStatus.error && <p className="error-message">{analysisStatus.error}</p>}
                   {analysisStatus.result && (
                     <div className="result-container">
