@@ -217,4 +217,58 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
   send({ type: 'status', message: uiTexts.cleanupComplete });
 }
 
-module.exports = { analyzeVideoInBatches };
+// --- Tarayıcıdan Gelen Ses ve Kareleri Analiz Et ---
+async function analyzeUploadedMedia(framePaths, audioPath, settings, onProgressUpdate) {
+  const { outputLanguage, analysisType } = settings;
+  const { send, uiTexts } = onProgressUpdate;
+  let finalCumulativeAnalysis = "";
+  const uploadedFileNames = [];
+
+  send({ type: 'status', message: uiTexts.processing('client-frames', config.MODEL_NAME, 1, 0) });
+
+  let audioFile = null;
+  if (audioPath) {
+    audioFile = await uploadFileToGemini(audioPath, 'audio/webm', onProgressUpdate);
+    if (audioFile) uploadedFileNames.push(audioFile.name);
+  }
+
+  const imageParts = [];
+  for (const fp of framePaths) {
+    const mimeType = fp.endsWith('.png') ? 'image/png' : 'image/jpeg';
+    const part = await fileToGenerativePart(fp, mimeType);
+    if (part) imageParts.push(part);
+  }
+
+  const languageInstruction = `**ULTIMATE RULE: YOUR ENTIRE RESPONSE MUST BE EXCLUSIVELY IN THE FOLLOWING LANGUAGE: "${outputLanguage}". DO NOT DEVIATE. EVERY SINGLE WORD, INCLUDING HEADERS, MUST BE IN ${outputLanguage}.**`;
+  let promptText;
+  if (analysisType === 'meeting') {
+    promptText = `${languageInstruction}\n\nYou are an expert meeting analysis AI... (Önceki cevaptaki tam toplantı prompt'u)`;
+  } else {
+    promptText = `${languageInstruction}\n\nYou are an expert video interpretation AI... (Önceki cevaptaki tam genel video prompt'u)`;
+  }
+  const promptParts = [promptText, ...imageParts];
+  if (audioFile) {
+    const audioPart = { fileData: { mimeType: audioFile.mimeType, fileUri: audioFile.uri } };
+    promptParts.push(audioPart);
+  }
+
+  try {
+    const model = genAI.getGenerativeModel({ model: config.MODEL_NAME });
+    const chat = model.startChat({ history: [] });
+    const result = await chat.sendMessage(promptParts);
+    finalCumulativeAnalysis = result.response.text();
+    send({ type: 'result', data: finalCumulativeAnalysis });
+  } catch (error) {
+    send({ type: 'error', message: `Analysis failed: ${error.message}` });
+  }
+
+  send({ type: 'status', message: uiTexts.cleanup });
+  for (const fileName of uploadedFileNames) {
+    try { await axios.delete(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GOOGLE_API_KEY}`); } catch (err) { }
+  }
+  for (const fp of framePaths) { await fsPromises.unlink(fp).catch(() => {}); }
+  if (audioPath) { await fsPromises.unlink(audioPath).catch(() => {}); }
+  send({ type: 'status', message: uiTexts.cleanupComplete });
+}
+
+module.exports = { analyzeVideoInBatches, analyzeUploadedMedia };

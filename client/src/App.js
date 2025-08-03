@@ -20,6 +20,7 @@ function App() {
   const [totalBatches, setTotalBatches] = useState(1);
   const [secondsPerBatch, setSecondsPerBatch] = useState(MODELS[DEFAULT_MODEL].secondsPerBatch);
   const [frameInterval, setFrameInterval] = useState(MODELS[DEFAULT_MODEL].videoFrame);
+  const [useServer, setUseServer] = useState(false);
   // const [socket2, setSocket2] = useState(defaultConfig.SOCKET);
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -127,7 +128,7 @@ function App() {
   };
 
   useEffect(() => {
-    if (!superMode) {
+    if (!superMode || !useServer) {
       const modelCfg = MODELS[selectedModel];
       setSecondsPerBatch(modelCfg.secondsPerBatch);
       const interval = analysisType === 'meeting' ? modelCfg.meetingFrame : modelCfg.videoFrame;
@@ -137,38 +138,61 @@ function App() {
         updateMaxBatches(videoRef.current.duration, modelCfg.secondsPerBatch);
       }
     }
-  }, [selectedModel, analysisType, superMode]);
+  }, [selectedModel, analysisType, superMode, useServer]);
   const handleUpload = async () => {
-    if (!selectedFile || !socketId) { setAnalysisStatus({ ...analysisStatus, error: 'Please select a file and wait for server connection.' }); return; }
+    if (!selectedFile || !socketId) {
+      setAnalysisStatus({ ...analysisStatus, error: 'Please select a file and wait for server connection.' });
+      return;
+    }
     setIsLoading(true);
     setAnalysisStartTime(Date.now());
     setTimeLeft(null);
     setOpenSection('analysis');
-    setAnalysisStatus({ message: 'Uploading video...', percent: 0, result: '', error: '' });
-    const durationNeeded = totalBatches * secondsPerBatch;
-    let uploadFile = selectedFile;
-    if (videoRef.current && durationNeeded < videoRef.current.duration) {
-      try {
-        uploadFile = await trimVideo(selectedFile, durationNeeded);
-      } catch (e) {
-        console.error('Trim failed, sending full file', e);
+
+    if (useServer) {
+      setAnalysisStatus({ message: 'Uploading video...', percent: 0, result: '', error: '' });
+      const durationNeeded = totalBatches * secondsPerBatch;
+      let uploadFile = selectedFile;
+      if (videoRef.current && durationNeeded < videoRef.current.duration) {
+        try {
+          uploadFile = await trimVideo(selectedFile, durationNeeded);
+        } catch (e) {
+          console.error('Trim failed, sending full file', e);
+        }
       }
-    }
-    const formData = new FormData();
-    formData.append('video', uploadFile);
-    formData.append('analysisType', analysisType);
-    formData.append('outputLanguage', outputLanguage);
-    formData.append('socketId', socketId);
-    formData.append('totalBatches', totalBatches);
-    formData.append('secondsPerBatch', secondsPerBatch);
-    formData.append('frameInterval', frameInterval);
-    try {
-      // const response = await axios.post('http://localhost:5001/api/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const response = await axios.post('https://videoii-server.onrender.com/api/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setAnalysisStatus(prev => ({ ...prev, message: response.data.message }));
-    } catch (error) {
-      setAnalysisStatus({ ...analysisStatus, error: error.response?.data?.error || 'An upload error occurred.' });
-      setIsLoading(false);
+      const formData = new FormData();
+      formData.append('video', uploadFile);
+      formData.append('analysisType', analysisType);
+      formData.append('outputLanguage', outputLanguage);
+      formData.append('socketId', socketId);
+      formData.append('totalBatches', totalBatches);
+      formData.append('secondsPerBatch', secondsPerBatch);
+      formData.append('frameInterval', frameInterval);
+      try {
+        const response = await axios.post('https://videoii-server.onrender.com/api/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+        setAnalysisStatus(prev => ({ ...prev, message: response.data.message }));
+      } catch (error) {
+        setAnalysisStatus({ ...analysisStatus, error: error.response?.data?.error || 'An upload error occurred.' });
+        setIsLoading(false);
+      }
+    } else {
+      setAnalysisStatus({ message: 'Processing on device...', percent: 0, result: '', error: '' });
+      try {
+        const maxDur = MODELS[selectedModel].maxDuration;
+        const duration = videoRef.current ? Math.min(videoRef.current.duration, maxDur) : maxDur;
+        const { audioBlob, frames } = await processVideoOnDevice(selectedFile, frameInterval, duration);
+        const formData = new FormData();
+        frames.forEach((blob, idx) => formData.append('frames', blob, `frame_${idx}.jpg`));
+        if (audioBlob) formData.append('audio', audioBlob, 'audio.webm');
+        formData.append('analysisType', analysisType);
+        formData.append('outputLanguage', outputLanguage);
+        formData.append('socketId', socketId);
+        const response = await axios.post('https://videoii-server.onrender.com/api/analyze-browser', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+        setAnalysisStatus(prev => ({ ...prev, message: response.data.message }));
+      } catch (error) {
+        setAnalysisStatus({ ...analysisStatus, error: error.response?.data?.error || 'An upload error occurred.' });
+        setIsLoading(false);
+      }
     }
   };
   const handleReset = () => {
@@ -212,6 +236,55 @@ function App() {
   };
   const toggleFileInfo = () => setShowFileInfo(v => !v);
   const toggleConfigInfo = () => setShowConfigInfo(v => !v);
+
+  const processVideoOnDevice = (file, interval, maxDuration) => {
+    return new Promise((resolve, reject) => {
+      try {
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(file);
+        video.muted = true;
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const frames = [];
+        let audioChunks = [];
+        video.onloadedmetadata = () => {
+          const duration = Math.min(video.duration, maxDuration);
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const stream = video.captureStream();
+          const audioStream = new MediaStream(stream.getAudioTracks());
+          const recorder = new MediaRecorder(audioStream);
+          recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+          const capture = () => {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob((blob) => { if (blob) frames.push(blob); }, 'image/jpeg', 0.7);
+          };
+          capture();
+          const intervalId = setInterval(() => {
+            if (video.currentTime >= duration) {
+              video.pause();
+            } else {
+              capture();
+            }
+          }, interval * 1000);
+          video.onpause = () => {
+            clearInterval(intervalId);
+            recorder.stop();
+          };
+          recorder.start();
+          video.play();
+          setTimeout(() => video.pause(), duration * 1000);
+          recorder.onstop = () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            resolve({ audioBlob, frames });
+          };
+        };
+        video.onerror = (e) => reject(e);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  };
 
   const trimVideo = (file, duration) => {
     return new Promise((resolve, reject) => {
@@ -269,10 +342,19 @@ function App() {
                     </select>
                   </div>
                   {superMode && (
+                    <div className="form-group">
+                      <label htmlFor="processing-mode">Processing</label>
+                      <select id="processing-mode" value={useServer ? 'server' : 'device'} onChange={(e) => setUseServer(e.target.value === 'server')} disabled={isLoading}>
+                        <option value="device">Device</option>
+                        <option value="server">Server</option>
+                      </select>
+                    </div>
+                  )}
+                  {superMode && useServer && (
                     <>
                       <div className="form-group"><label htmlFor="total-batches">Total Batches (Max: {Math.min(maxBatchesAllowed, superMode ? 100 : 10)})</label><input id="total-batches" type="number" value={totalBatches} onChange={handleBatchChange} min="1" max={Math.min(maxBatchesAllowed, superMode ? 100 : 10)} disabled={isLoading || !selectedFile} /></div>
                       <div className="form-group"><label htmlFor="seconds-per-batch">Batch Duration (seconds)</label><input id="seconds-per-batch" type="number" value={secondsPerBatch} onChange={handleSecondsChange} min="10" max="600" step="10" disabled={isLoading} /></div>
-                      <div className="form-group"><label htmlFor="frame-interval">Frame Interval (sec)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(e.target.value)} min="1" disabled={isLoading} /></div>
+                      <div className="form-group"><label htmlFor="frame-interval">Frame Interval (sec)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(e.target.value)} min="0.1" step="0.1" disabled={isLoading} /></div>
                     </>
                   )}
                   <div className="form-group"><label htmlFor="analysis-type">Analysis Type</label><select id="analysis-type" value={analysisType} onChange={(e) => setAnalysisType(e.target.value)} disabled={isLoading}><option value="general">General Analysis</option><option value="meeting">Meeting Analysis</option></select></div>
