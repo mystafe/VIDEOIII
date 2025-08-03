@@ -171,8 +171,7 @@ function App() {
     setUploadProgress(0);
     setProcessingProgress(0);
     setLogs([]);
-
-    if (useServer) {
+    const uploadToServer = async () => {
       setAnalysisStatus({ message: 'Uploading video...', percent: 0, result: '', error: '' });
       setLogs(prev => [...prev, 'Uploading video to server...']);
       const durationNeeded = totalBatches * secondsPerBatch;
@@ -205,9 +204,14 @@ function App() {
         setLogs(prev => [...prev, 'Upload complete, processing started...']);
         setProcessingProgress(0);
       } catch (error) {
-        setAnalysisStatus({ ...analysisStatus, error: error.response?.data?.error || 'An upload error occurred.' });
+        setAnalysisStatus({ ...analysisStatus, error: error.response?.data?.error || error.message || 'An upload error occurred.' });
+        setLogs(prev => [...prev, `Error: ${error.message || 'An upload error occurred.'}`]);
         setIsLoading(false);
       }
+    };
+
+    if (useServer) {
+      await uploadToServer();
     } else {
       setAnalysisStatus({ message: 'Processing on device...', percent: 0, result: '', error: '' });
       setLogs(prev => [...prev, 'Processing on device...']);
@@ -237,8 +241,15 @@ function App() {
         setAnalysisStatus(prev => ({ ...prev, message: response.data.message }));
         setLogs(prev => [...prev, 'Upload complete, waiting for server analysis...']);
       } catch (error) {
-        setAnalysisStatus({ ...analysisStatus, error: error.response?.data?.error || 'An upload error occurred.' });
-        setIsLoading(false);
+        if (error.message && error.message.includes('Stream capture is not supported')) {
+          setLogs(prev => [...prev, 'Tarayıcıda işleme desteklenmiyor, sunucuda işlenecektir.']);
+          setUseServer(true);
+          await uploadToServer();
+        } else {
+          setAnalysisStatus({ ...analysisStatus, error: error.response?.data?.error || error.message || 'An upload error occurred.' });
+          setLogs(prev => [...prev, `Error: ${error.message || 'An upload error occurred.'}`]);
+          setIsLoading(false);
+        }
       }
     }
   };
