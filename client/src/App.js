@@ -3,7 +3,7 @@ import axios from 'axios';
 import io from "socket.io-client";
 import './App.css';
 import './Spinner.css';
-import { config as defaultConfig, MODELS, DEFAULT_MODEL } from './config.js';
+import { config as defaultConfig, MODELS, DEFAULT_MODEL, AI_MODULES, DEFAULT_AI_MODULE } from './config.js';
 
 const Spinner = () => <div className="spinner"></div>;
 // const socket = io("http://localhost:5001");
@@ -16,6 +16,7 @@ function App() {
     window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   const [theme, setTheme] = useState(getPreferredTheme());
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
+  const [aiModule, setAiModule] = useState(DEFAULT_AI_MODULE);
   const getInitialAnalysisState = () => ({ message: 'Please select a video and configure settings to begin.', percent: 0, result: '', error: '' });
   const [totalBatches, setTotalBatches] = useState(1);
   const [secondsPerBatch, setSecondsPerBatch] = useState(MODELS[DEFAULT_MODEL].secondsPerBatch);
@@ -41,6 +42,9 @@ function App() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [logs, setLogs] = useState([]);
+  const addLog = React.useCallback((msg) => {
+    if (superMode) setLogs(prev => [...prev, msg]);
+  }, [superMode]);
 
   useEffect(() => {
     document.body.className = theme === 'dark' ? 'dark-mode' : '';
@@ -62,8 +66,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    socket.on('connect', () => { setSocketId(socket.id); });
-    socket.on('progressUpdate', (data) => {
+    const handleProgress = (data) => {
       if (data.type === 'status' || data.type === 'progress') {
         setAnalysisStatus(prev => ({
           ...prev,
@@ -73,9 +76,9 @@ function App() {
         }));
         if (data.percent !== undefined) {
           setProcessingProgress(data.percent);
-          setLogs(prev => [...prev, `${data.message} (${data.percent}%)`]);
+          addLog(`${data.message} (${data.percent}%)`);
         } else {
-          setLogs(prev => [...prev, data.message]);
+          addLog(data.message);
         }
         if (analysisStartTime && data.percent !== undefined && data.percent > 0) {
           const elapsed = (Date.now() - analysisStartTime) / 1000;
@@ -87,19 +90,21 @@ function App() {
       if (data.type === 'result') {
         setAnalysisStatus(prev => ({ ...prev, message: 'Analysis complete!', result: data.data, percent: 100, error: '' }));
         setProcessingProgress(100);
-        setLogs(prev => [...prev, 'Analysis complete!']);
+        addLog('Analysis complete!');
         setIsLoading(false);
         setTimeLeft(null);
       }
       if (data.type === 'error') {
         setAnalysisStatus(prev => ({ ...prev, message: '', error: data.message, percent: 0 }));
-        setLogs(prev => [...prev, `Error: ${data.message}`]);
+        addLog(`Error: ${data.message}`);
         setIsLoading(false);
         setTimeLeft(null);
       }
-    });
-    return () => { socket.off('connect'); socket.off('progressUpdate'); };
-  }, []);
+    };
+    socket.on('connect', () => { setSocketId(socket.id); });
+    socket.on('progressUpdate', handleProgress);
+    return () => { socket.off('connect'); socket.off('progressUpdate', handleProgress); };
+  }, [analysisStartTime, addLog]);
 
   const updateMaxBatches = (videoDuration, seconds) => {
     if (videoDuration && seconds > 0) {
@@ -155,13 +160,13 @@ function App() {
     if (!selectedFile) {
       const msg = 'Please select a file before starting analysis.';
       setAnalysisStatus({ ...analysisStatus, error: msg });
-      setLogs(prev => [...prev, msg]);
+      addLog(msg);
       return;
     }
     if (!socketId) {
       const msg = 'Server connection not established yet.';
       setAnalysisStatus({ ...analysisStatus, error: msg });
-      setLogs(prev => [...prev, msg]);
+      addLog(msg);
       return;
     }
     setIsLoading(true);
@@ -173,7 +178,7 @@ function App() {
     setLogs([]);
     const uploadToServer = async () => {
       setAnalysisStatus({ message: 'Uploading video...', percent: 0, result: '', error: '' });
-      setLogs(prev => [...prev, 'Uploading video to server...']);
+      addLog('Uploading video to server...');
       const durationNeeded = totalBatches * secondsPerBatch;
       let uploadFile = selectedFile;
       if (videoRef.current && durationNeeded < videoRef.current.duration) {
@@ -188,6 +193,7 @@ function App() {
       formData.append('analysisType', analysisType);
       formData.append('outputLanguage', outputLanguage);
       formData.append('socketId', socketId);
+      formData.append('aiModule', aiModule);
       formData.append('totalBatches', totalBatches);
       formData.append('secondsPerBatch', secondsPerBatch);
       formData.append('frameInterval', frameInterval);
@@ -197,15 +203,15 @@ function App() {
           onUploadProgress: (e) => {
             const percent = Math.round((e.loaded * 100) / e.total);
             setUploadProgress(percent);
-            setLogs(prev => [...prev, `Upload ${percent}%`]);
+            addLog(`Upload ${percent}%`);
           }
         });
         setAnalysisStatus(prev => ({ ...prev, message: response.data.message }));
-        setLogs(prev => [...prev, 'Upload complete, processing started...']);
+        addLog('Upload complete, processing started...');
         setProcessingProgress(0);
       } catch (error) {
         setAnalysisStatus({ ...analysisStatus, error: error.response?.data?.error || error.message || 'An upload error occurred.' });
-        setLogs(prev => [...prev, `Error: ${error.message || 'An upload error occurred.'}`]);
+        addLog(`Error: ${error.message || 'An upload error occurred.'}`);
         setIsLoading(false);
       }
     };
@@ -214,15 +220,15 @@ function App() {
       await uploadToServer();
     } else {
       setAnalysisStatus({ message: 'Processing on device...', percent: 0, result: '', error: '' });
-      setLogs(prev => [...prev, 'Processing on device...']);
+      addLog('Processing on device...');
       try {
         const maxDur = MODELS[selectedModel].maxDuration;
         const duration = videoRef.current ? Math.min(videoRef.current.duration, maxDur) : maxDur;
         const { audioBlob, frames } = await processVideoOnDevice(selectedFile, frameInterval, duration, (percent, msg) => {
           setProcessingProgress(Math.round(percent));
-          setLogs(prev => [...prev, `${msg} (${Math.round(percent)}%)`]);
+          addLog(`${msg} (${Math.round(percent)}%)`);
         });
-        setLogs(prev => [...prev, 'Device processing finished. Uploading to server...']);
+        addLog('Device processing finished. Uploading to server...');
         setProcessingProgress(0);
         const formData = new FormData();
         frames.forEach((blob, idx) => formData.append('frames', blob, `frame_${idx}.jpg`));
@@ -230,24 +236,25 @@ function App() {
         formData.append('analysisType', analysisType);
         formData.append('outputLanguage', outputLanguage);
         formData.append('socketId', socketId);
+        formData.append('aiModule', aiModule);
         const response = await axios.post('https://videoii-server.onrender.com/api/analyze-browser', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
           onUploadProgress: (e) => {
             const percent = Math.round((e.loaded * 100) / e.total);
             setUploadProgress(percent);
-            setLogs(prev => [...prev, `Upload ${percent}%`]);
+            addLog(`Upload ${percent}%`);
           }
         });
         setAnalysisStatus(prev => ({ ...prev, message: response.data.message }));
-        setLogs(prev => [...prev, 'Upload complete, waiting for server analysis...']);
+        addLog('Upload complete, waiting for server analysis...');
       } catch (error) {
         if (error.message && error.message.includes('Stream capture is not supported')) {
-          setLogs(prev => [...prev, 'Tarayıcıda işleme desteklenmiyor, sunucuda işlenecektir.']);
+          addLog('Tarayıcıda işleme desteklenmiyor, sunucuda işlenecektir.');
           setUseServer(true);
           await uploadToServer();
         } else {
           setAnalysisStatus({ ...analysisStatus, error: error.response?.data?.error || error.message || 'An upload error occurred.' });
-          setLogs(prev => [...prev, `Error: ${error.message || 'An upload error occurred.'}`]);
+          addLog(`Error: ${error.message || 'An upload error occurred.'}`);
           setIsLoading(false);
         }
       }
@@ -267,6 +274,8 @@ function App() {
     setMaxBatchesAllowed(10);
     setLogoClicks(0);
     setSuperMode(false);
+    setLogs([]);
+    setAiModule(DEFAULT_AI_MODULE);
     if (fileInputRef.current) { fileInputRef.current.value = ''; }
   };
   const handleLogoClick = () => {
@@ -435,6 +444,16 @@ function App() {
             {openSection === 'config' && (
               <>
                 <div className="form-grid">
+                  {superMode && (
+                    <div className="form-group">
+                      <label htmlFor="ai-module">AI Module</label>
+                      <select id="ai-module" value={aiModule} onChange={(e) => setAiModule(e.target.value)} disabled={isLoading}>
+                        {Object.entries(AI_MODULES).map(([key, m]) => (
+                          <option key={key} value={key}>{m.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className="form-group model-group">
                     <label htmlFor="model-select">Model</label>
                     <select id="model-select" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} disabled={isLoading}>
@@ -514,7 +533,7 @@ function App() {
                     <p className="time-remaining">Tahmini kalan süre: {timeLeft} sn</p>
                   )}
                   {!analysisStatus.result && <p className="status-message">{analysisStatus.message}</p>}
-                  {logs.length > 0 && (
+                  {superMode && logs.length > 0 && (
                     <div className="log-container">
                       {logs.map((log, idx) => (<div key={idx} className="log-entry">{log}</div>))}
                     </div>

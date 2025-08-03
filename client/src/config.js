@@ -6,33 +6,40 @@ export const MODELS = {
   speedy: {
     label: "\uD83D\uDE80 Speedy",
     note: "En hızlı model",
-    secondsPerBatch: 60,
+    secondsPerBatch: 120,
     meetingFrame: 12,
     videoFrame: 4,
-    maxDuration: 1800,
+    maxDuration: 7200,
     maxSize: 200,
   },
   regular: {
     label: "\uD83E\uDD85 Regular",
     note: "Akıllı ve hızlı model",
-    secondsPerBatch: 30,
+    secondsPerBatch: 60,
     meetingFrame: 6,
     videoFrame: 2,
-    maxDuration: 900,
+    maxDuration: 3600,
     maxSize: 150,
   },
   smart: {
     label: "\uD83E\uDD81 Smart",
     note: "En akıllı model",
-    secondsPerBatch: 20,
+    secondsPerBatch: 30,
     meetingFrame: 2,
     videoFrame: 0.5,
-    maxDuration: 300,
+    maxDuration: 1800,
     maxSize: 120,
   },
 };
 
 export const DEFAULT_MODEL = "speedy";
+
+export const AI_MODULES = {
+  gemini: { label: "Gemini" },
+  openai: { label: "OpenAI" },
+};
+
+export const DEFAULT_AI_MODULE = 'gemini';
 
 export const config = {
   MODEL_NAME: "gemini-2.5-flash",

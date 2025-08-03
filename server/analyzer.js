@@ -6,13 +6,14 @@ const fs = require("fs");
 const { createReadStream, promises: fsPromises } = require("fs");
 const path = require("path");
 const axios = require('axios');
+const OpenAI = require('openai');
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 if (!GOOGLE_API_KEY) {
-  console.error("ERROR: GOOGLE_API_KEY not found in .env file.");
-  process.exit(1);
+  console.warn("WARNING: GOOGLE_API_KEY not found. Gemini module will be unavailable.");
 }
-const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
+const genAI = GOOGLE_API_KEY ? new GoogleGenerativeAI(GOOGLE_API_KEY) : null;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 // --- Yardımcı Fonksiyonlar ---
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -54,10 +55,11 @@ async function fileToGenerativePart(filePath, mimeType) {
   }
 }
 
-// --- Ana Analiz Fonksiyonu ---
-async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
+// --- Gemini Tabanlı Analiz Fonksiyonu ---
+async function analyzeVideoInBatchesGemini(videoPath, settings, onProgressUpdate) {
   const { outputLanguage, analysisType, totalBatches, secondsPerBatch, frameInterval } = settings;
   const { send, uiTexts } = onProgressUpdate; // Fonksiyonları ve metinleri en başta alıyoruz
+  if (!genAI) { send({ type: 'error', message: 'Gemini API key not configured.' }); return; }
   const ffmpeg = require('fluent-ffmpeg');
   let finalCumulativeAnalysis = "";
   const uploadedFileNames = [];
@@ -154,12 +156,12 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
 
     if (currentBatch === 0) {
       if (analysisType === 'meeting') {
-        promptText = `${languageInstruction}\n\nYou are an expert meeting analysis AI... (Önceki cevaptaki tam toplantı prompt'u)`;
+        promptText = `${languageInstruction}\n\nYou are an expert meeting analysis AI. Generate a clear transcript of the spoken content and then provide detailed meeting minutes including key decisions and action items.`;
       } else {
-        promptText = `${languageInstruction}\n\nYou are an expert video interpretation AI... (Önceki cevaptaki tam genel video prompt'u)`;
+        promptText = `${languageInstruction}\n\nYou are an expert video interpretation AI. Describe in detail what happens in the video segment, highlighting important objects and actions.`;
       }
     } else {
-      promptText = `${languageInstruction}\n\nWe are continuing our analysis... (Önceki cevaptaki tam güncelleme prompt'u)`;
+      promptText = `${languageInstruction}\n\nWe are continuing our analysis. Update the transcript or summary with insights from this segment.`;
     }
 
     const promptParts = [promptText, ...imageParts];
@@ -218,9 +220,10 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
 }
 
 // --- Tarayıcıdan Gelen Ses ve Kareleri Analiz Et ---
-async function analyzeUploadedMedia(framePaths, audioPath, settings, onProgressUpdate) {
+async function analyzeUploadedMediaGemini(framePaths, audioPath, settings, onProgressUpdate) {
   const { outputLanguage, analysisType } = settings;
   const { send, uiTexts } = onProgressUpdate;
+  if (!genAI) { send({ type: 'error', message: 'Gemini API key not configured.' }); return; }
   let finalCumulativeAnalysis = "";
   const uploadedFileNames = [];
 
@@ -242,9 +245,9 @@ async function analyzeUploadedMedia(framePaths, audioPath, settings, onProgressU
   const languageInstruction = `**ULTIMATE RULE: YOUR ENTIRE RESPONSE MUST BE EXCLUSIVELY IN THE FOLLOWING LANGUAGE: "${outputLanguage}". DO NOT DEVIATE. EVERY SINGLE WORD, INCLUDING HEADERS, MUST BE IN ${outputLanguage}.**`;
   let promptText;
   if (analysisType === 'meeting') {
-    promptText = `${languageInstruction}\n\nYou are an expert meeting analysis AI... (Önceki cevaptaki tam toplantı prompt'u)`;
+    promptText = `${languageInstruction}\n\nYou are an expert meeting analysis AI. Create a transcript of the discussion and summarize the meeting with key decisions and action items.`;
   } else {
-    promptText = `${languageInstruction}\n\nYou are an expert video interpretation AI... (Önceki cevaptaki tam genel video prompt'u)`;
+    promptText = `${languageInstruction}\n\nYou are an expert video interpretation AI. Describe in detail the content of the video.`;
   }
   const promptParts = [promptText, ...imageParts];
   if (audioFile) {
@@ -269,6 +272,124 @@ async function analyzeUploadedMedia(framePaths, audioPath, settings, onProgressU
   for (const fp of framePaths) { await fsPromises.unlink(fp).catch(() => {}); }
   if (audioPath) { await fsPromises.unlink(audioPath).catch(() => {}); }
   send({ type: 'status', message: uiTexts.cleanupComplete });
+}
+// --- OpenAI Tabanlı Analiz Fonksiyonları ---
+async function analyzeVideoInBatchesOpenAI(videoPath, settings, onProgressUpdate) {
+  const { outputLanguage, analysisType, totalBatches, secondsPerBatch } = settings;
+  const { send, uiTexts } = onProgressUpdate;
+  if (!OPENAI_API_KEY) {
+    send({ type: 'error', message: 'OPENAI_API_KEY not configured.' });
+    return;
+  }
+  const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+  const ffmpeg = require('fluent-ffmpeg');
+  let transcript = '';
+  const tempAudio = path.join(__dirname, config.AUDIO_FOLDER);
+  await fsPromises.rm(tempAudio, { recursive: true, force: true }).catch(() => {});
+  await fsPromises.mkdir(tempAudio, { recursive: true });
+  send({ type: 'status', message: uiTexts.processing(path.basename(videoPath), 'gpt-4o-mini', totalBatches, secondsPerBatch) });
+  for (let currentBatch = 0; currentBatch < totalBatches; currentBatch++) {
+    const percentage = Math.round((currentBatch / totalBatches) * 100);
+    send({ type: 'progress', message: uiTexts.step(currentBatch + 1, totalBatches, uiTexts.extracting), percent: percentage });
+    const startTimeSeconds = currentBatch * secondsPerBatch;
+    const audioChunkPath = path.join(tempAudio, `audio_chunk_${currentBatch}.mp3`);
+    await new Promise((resolve, reject) => {
+      ffmpeg(videoPath)
+        .inputOptions([`-ss ${startTimeSeconds}`])
+        .outputOptions([`-t ${secondsPerBatch}`])
+        .output(audioChunkPath)
+        .noVideo()
+        .audioCodec('libmp3lame')
+        .on('end', resolve)
+        .on('error', reject)
+        .run();
+    });
+    const analysisPercent = percentage + Math.round((100 / totalBatches) / 2);
+    send({ type: 'progress', message: uiTexts.step(currentBatch + 1, totalBatches, uiTexts.analyzing), percent: analysisPercent });
+    try {
+      const tr = await openai.audio.transcriptions.create({ file: fs.createReadStream(audioChunkPath), model: 'gpt-4o-mini-transcribe' });
+      transcript += tr.text + '\n';
+      const batchCompletePercent = Math.round(((currentBatch + 1) / totalBatches) * 100);
+      send({ type: 'progress', message: `Batch ${currentBatch + 1}/${totalBatches} complete.`, percent: batchCompletePercent });
+    } catch (error) {
+      send({ type: 'error', message: `Transcription failed: ${error.message}` });
+      break;
+    }
+    await fsPromises.unlink(audioChunkPath).catch(() => {});
+  }
+  if (transcript.trim()) {
+    const languageInstruction = `**ULTIMATE RULE: YOUR ENTIRE RESPONSE MUST BE EXCLUSIVELY IN THE FOLLOWING LANGUAGE: "${outputLanguage}". DO NOT DEVIATE. EVERY SINGLE WORD, INCLUDING HEADERS, MUST BE IN ${outputLanguage}.**`;
+    let prompt;
+    if (analysisType === 'meeting') {
+      prompt = `${languageInstruction}\n\nBased on the following transcript, first present the transcript, then provide detailed meeting minutes with key decisions and action items.\n\nTranscript:\n${transcript}`;
+    } else {
+      prompt = `${languageInstruction}\n\nProvide a detailed summary and key insights for the following video transcript:\n${transcript}`;
+    }
+    try {
+      const completion = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }] });
+      const text = completion.choices[0].message.content;
+      send({ type: 'result', data: text });
+    } catch (error) {
+      send({ type: 'error', message: `Analysis failed: ${error.message}` });
+    }
+  } else {
+    send({ type: 'error', message: 'No transcript generated.' });
+  }
+  send({ type: 'status', message: uiTexts.cleanup });
+  await fsPromises.rm(tempAudio, { recursive: true, force: true }).catch(() => {});
+  send({ type: 'status', message: uiTexts.cleanupComplete });
+}
+
+async function analyzeUploadedMediaOpenAI(framePaths, audioPath, settings, onProgressUpdate) {
+  const { outputLanguage, analysisType } = settings;
+  const { send, uiTexts } = onProgressUpdate;
+  if (!OPENAI_API_KEY) {
+    send({ type: 'error', message: 'OPENAI_API_KEY not configured.' });
+    return;
+  }
+  const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+  send({ type: 'status', message: uiTexts.processing('client-frames', 'gpt-4o-mini', 1, 0) });
+  let transcript = '';
+  if (audioPath) {
+    try {
+      const tr = await openai.audio.transcriptions.create({ file: fs.createReadStream(audioPath), model: 'gpt-4o-mini-transcribe' });
+      transcript = tr.text;
+    } catch (error) {
+      send({ type: 'error', message: `Transcription failed: ${error.message}` });
+    }
+  }
+  const languageInstruction = `**ULTIMATE RULE: YOUR ENTIRE RESPONSE MUST BE EXCLUSIVELY IN THE FOLLOWING LANGUAGE: "${outputLanguage}". DO NOT DEVIATE. EVERY SINGLE WORD, INCLUDING HEADERS, MUST BE IN ${outputLanguage}.**`;
+  let prompt;
+  if (analysisType === 'meeting') {
+    prompt = `${languageInstruction}\n\nBased on the following transcript, first present the transcript and then provide detailed meeting minutes with key decisions and action items.\n\nTranscript:\n${transcript}`;
+  } else {
+    prompt = `${languageInstruction}\n\nProvide a detailed summary and key insights for the following video transcript:\n${transcript}`;
+  }
+  try {
+    const completion = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }] });
+    const text = completion.choices[0].message.content;
+    send({ type: 'result', data: text });
+  } catch (error) {
+    send({ type: 'error', message: `Analysis failed: ${error.message}` });
+  }
+  send({ type: 'status', message: uiTexts.cleanup });
+  for (const fp of framePaths) { await fsPromises.unlink(fp).catch(() => {}); }
+  if (audioPath) { await fsPromises.unlink(audioPath).catch(() => {}); }
+  send({ type: 'status', message: uiTexts.cleanupComplete });
+}
+
+async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
+  if (settings.aiModule === 'openai') {
+    return analyzeVideoInBatchesOpenAI(videoPath, settings, onProgressUpdate);
+  }
+  return analyzeVideoInBatchesGemini(videoPath, settings, onProgressUpdate);
+}
+
+async function analyzeUploadedMedia(framePaths, audioPath, settings, onProgressUpdate) {
+  if (settings.aiModule === 'openai') {
+    return analyzeUploadedMediaOpenAI(framePaths, audioPath, settings, onProgressUpdate);
+  }
+  return analyzeUploadedMediaGemini(framePaths, audioPath, settings, onProgressUpdate);
 }
 
 module.exports = { analyzeVideoInBatches, analyzeUploadedMedia };
