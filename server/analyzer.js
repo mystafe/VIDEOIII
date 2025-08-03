@@ -321,9 +321,9 @@ async function analyzeVideoInBatchesOpenAI(videoPath, settings, onProgressUpdate
     const languageInstruction = `**ULTIMATE RULE: YOUR ENTIRE RESPONSE MUST BE EXCLUSIVELY IN THE FOLLOWING LANGUAGE: "${outputLanguage}". DO NOT DEVIATE. EVERY SINGLE WORD, INCLUDING HEADERS, MUST BE IN ${outputLanguage}.**`;
     let prompt;
     if (analysisType === 'meeting') {
-      prompt = `${languageInstruction}\n\nBased on the following transcript, first present the transcript, then provide detailed meeting minutes with key decisions and action items.\n\nTranscript:\n${transcript}`;
+      prompt = `${languageInstruction}\n\nYou are an expert meeting analyst. Carefully read the transcript and follow these steps:\n1. Present the transcript verbatim.\n2. Think through the discussion step by step and summarize it chronologically.\n3. List key decisions and action items.\nReview your output for mistakes before finalizing.\n\nTranscript:\n${transcript}`;
     } else {
-      prompt = `${languageInstruction}\n\nProvide a detailed summary and key insights for the following video transcript:\n${transcript}`;
+      prompt = `${languageInstruction}\n\nYou are an expert video analyst. Analyze the transcript step by step and provide your answer using the following sections:\nSummary:\n- ...\n\nKey Insights:\n- ...\nAfter drafting the response, double-check for possible errors before finalizing.\n\nTranscript:\n${transcript}`;
     }
     try {
       const completion = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }] });
@@ -361,9 +361,9 @@ async function analyzeUploadedMediaOpenAI(framePaths, audioPath, settings, onPro
   const languageInstruction = `**ULTIMATE RULE: YOUR ENTIRE RESPONSE MUST BE EXCLUSIVELY IN THE FOLLOWING LANGUAGE: "${outputLanguage}". DO NOT DEVIATE. EVERY SINGLE WORD, INCLUDING HEADERS, MUST BE IN ${outputLanguage}.**`;
   let prompt;
   if (analysisType === 'meeting') {
-    prompt = `${languageInstruction}\n\nBased on the following transcript, first present the transcript and then provide detailed meeting minutes with key decisions and action items.\n\nTranscript:\n${transcript}`;
+    prompt = `${languageInstruction}\n\nYou are an expert meeting analyst. Carefully read the transcript and follow these steps:\n1. Present the transcript verbatim.\n2. Think through the discussion step by step and summarize it chronologically.\n3. List key decisions and action items.\nReview your output for mistakes before finalizing.\n\nTranscript:\n${transcript}`;
   } else {
-    prompt = `${languageInstruction}\n\nProvide a detailed summary and key insights for the following video transcript:\n${transcript}`;
+    prompt = `${languageInstruction}\n\nYou are an expert video analyst. Analyze the transcript step by step and provide your answer using the following sections:\nSummary:\n- ...\n\nKey Insights:\n- ...\nAfter drafting the response, double-check for possible errors before finalizing.\n\nTranscript:\n${transcript}`;
   }
   try {
     const completion = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }] });
