@@ -5,7 +5,7 @@ body { font-family: 'Inter', sans-serif; background-color: var(--background-colo
 .container { width: 100%; max-width: 800px; }
 .App-header { text-align: center; margin-bottom: 30px; }
 .App-header h1 { font-size: 2.5rem; font-weight: 700; margin: 0; color: var(--primary-color); user-select: none; }
-.App-header p { font-size: 1rem; color: var(--subtle-text-color); margin-top: 4px; }
+.App-header p { font-size: 0.9rem; color: var(--subtle-text-color); margin-top: 4px; }
 .controls-card, .status-card {
   background: var(--card-background);
   border-radius: 12px;

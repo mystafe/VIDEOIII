@@ -13,7 +13,7 @@ const socket = io(SERVER_URL);
 
 function App() {
   const [logoClicks, setLogoClicks] = useState(0);
-  const [superMode, setSuperMode] = useState(false);
+  const [superMode, setSuperMode] = useState(() => localStorage.getItem('superMode') === 'true');
   const getPreferredTheme = () => window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   const [theme, setTheme] = useState(getPreferredTheme());
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
@@ -64,6 +64,10 @@ function App() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('superMode', superMode);
+  }, [superMode]);
 
   useEffect(() => {
     const handleProgress = (data) => {
@@ -339,7 +343,7 @@ function App() {
     <div className="App">
       <div className="container">
         <header className="App-header">
-          <h1 onClick={handleLogoClick}>VIDEOIII</h1>
+          <h1 onClick={handleLogoClick}>S.V.A.P.</h1>
           <p>Smart Video Analysis Platform</p>
           {superMode && (
             <button className="theme-toggle" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} title="Toggle theme">
@@ -360,12 +364,14 @@ function App() {
                     </select>
                   </div>
                 )}
-                <div className="form-group model-group">
-                  <label htmlFor="model-select">Model</label>
-                  <select id="model-select" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} disabled={isLoading}>
-                    {Object.entries(MODELS).map(([k, m]) => <option key={k} value={k}>{`${m.label} - ${m.note}`}</option>)}
-                  </select>
-                </div>
+                {superMode && (
+                  <div className="form-group model-group">
+                    <label htmlFor="model-select">Model</label>
+                    <select id="model-select" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} disabled={isLoading}>
+                      {Object.entries(MODELS).map(([k, m]) => <option key={k} value={k}>{`${m.label} - ${m.note}`}</option>)}
+                    </select>
+                  </div>
+                )}
                 {superMode && (
                   <div className="form-group">
                     <label htmlFor="processing-mode">Processing</label>
@@ -381,7 +387,9 @@ function App() {
                     <div className="form-group"><label>Batch Duration (s)</label><input type="number" value={secondsPerBatch} onChange={handleSecondsChange} min="1" max="600" disabled={isLoading} /></div>
                   </>
                 )}
-                <div className="form-group"><label htmlFor="frame-interval">Frame Interval (s)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(Number(e.target.value))} min="1" max="60" step="1" disabled={isLoading || (superMode && useServer)} /></div>
+                {superMode && useServer && (
+                  <div className="form-group"><label htmlFor="frame-interval">Frame Interval (s)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(Number(e.target.value))} min="1" max="60" step="1" disabled={isLoading || (superMode && useServer)} /></div>
+                )}
                 <div className="form-group"><label htmlFor="analysis-type">Analysis Type</label><select id="analysis-type" value={analysisType} onChange={(e) => setAnalysisType(e.target.value)} disabled={isLoading}><option value="general">General Analysis</option><option value="meeting">Meeting Analysis</option></select></div>
                 <div className="form-group"><label htmlFor="output-language">Report Language</label><select id="output-language" value={outputLanguage} onChange={(e) => setOutputLanguage(e.target.value)} disabled={isLoading}><option value="Turkish">Turkish</option><option value="English">English</option></select></div>
               </div>

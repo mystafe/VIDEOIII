@@ -14,6 +14,7 @@ const config = require('./config.js');
 // Diğer modüllerimizi import ediyoruz
 const { analyzeVideoInBatches, analyzeUploadedMedia } = require('./analyzer.js');
 const UI_TEXTS = require('./ui-texts.js'); // Arayüz metinlerini ayrı dosyadan alıyoruz
+const { logAnalysis } = require('./logger');
 
 const app = express();
 const server = http.createServer(app);
@@ -87,6 +88,8 @@ app.post('/api/analyze', (req, res, next) => {
   console.log(`--- Analysis request received (Socket ID: ${settings.socketId}) ---`);
   res.status(202).json({ message: 'Analysis request accepted.' });
 
+  const analysisStart = Date.now();
+  let analysisResult = '';
   try {
     // --- DÜZELTME BURADA ---
     // analyzer'a artık hem Socket.IO gönderme fonksiyonunu
@@ -98,12 +101,21 @@ app.post('/api/analyze', (req, res, next) => {
       uiTexts: UI_TEXTS // Metin objesini de ekliyoruz
     };
 
-    await analyzeVideoInBatches(req.file.path, settings, progressCallback);
+    analysisResult = await analyzeVideoInBatches(req.file.path, settings, progressCallback);
 
   } catch (error) {
     console.error('Error during analysis process:', error);
     io.to(settings.socketId).emit('progressUpdate', { type: 'error', message: 'An unexpected error occurred on the server.' });
+    analysisResult = `Error: ${error.message}`;
   } finally {
+    await logAnalysis({
+      ip: req.ip,
+      userAgent: req.headers['user-agent'] || '',
+      settings,
+      fileInfo: { originalname: req.file.originalname, size: req.file.size },
+      startTime: analysisStart,
+      analysisResult,
+    });
     fs.unlink(req.file.path, (err) => {
       if (err) console.error("Could not delete temporary uploaded video:", err);
       else console.log("Temporary uploaded video deleted:", req.file.path);
@@ -138,6 +150,8 @@ app.post('/api/analyze-browser', (req, res, next) => {
   if (framePaths.length === 0) {
     return res.status(400).json({ error: 'No frames received.' });
   }
+  const analysisStart = Date.now();
+  let analysisResult = '';
   try {
     const progressCallback = {
       send: (progressUpdate) => {
@@ -145,10 +159,20 @@ app.post('/api/analyze-browser', (req, res, next) => {
       },
       uiTexts: UI_TEXTS
     };
-    await analyzeUploadedMedia(framePaths, audioPath, settings, progressCallback);
+    analysisResult = await analyzeUploadedMedia(framePaths, audioPath, settings, progressCallback);
   } catch (error) {
     console.error('Error during analysis process:', error);
     io.to(settings.socketId).emit('progressUpdate', { type: 'error', message: 'An unexpected error occurred on the server.' });
+    analysisResult = `Error: ${error.message}`;
+  } finally {
+    await logAnalysis({
+      ip: req.ip,
+      userAgent: req.headers['user-agent'] || '',
+      settings,
+      fileInfo: { frames: framePaths.length, audio: !!audioPath },
+      startTime: analysisStart,
+      analysisResult,
+    });
   }
 });
 

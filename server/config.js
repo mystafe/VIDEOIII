@@ -16,7 +16,7 @@ const config = {
   // --- Batch (Parça) Analiz Ayarları ---
   TOTAL_BATCHES: 1,
   SECONDS_PER_BATCH: 120,
-  FRAME_INTERVAL_SECONDS: 10,
+  FRAME_INTERVAL_SECONDS: 3,
 
   // --- Görsel Çıktı Ayarları ---
   // Daha düşük çözünürlük ve sıkıştırılmış JPEG formatı bellek kullanımını azalır.
