@@ -15,7 +15,6 @@ const genAI = GOOGLE_API_KEY ? new GoogleGenerativeAI(GOOGLE_API_KEY) : null;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 // --- Yardımcı Fonksiyonlar ---
-
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function uploadFileToGemini(filePath, mimeType, onProgressUpdate) {
@@ -68,7 +67,6 @@ async function fileToBase64(filePath) {
 
 
 // --- Gemini Tabanlı Analiz Fonksiyonları ---
-
 async function analyzeVideoInBatchesGemini(videoPath, settings, onProgressUpdate) {
   const { outputLanguage, analysisType, totalBatches, secondsPerBatch, frameInterval } = settings;
   const { send, uiTexts } = onProgressUpdate;
@@ -102,46 +100,25 @@ async function analyzeVideoInBatchesGemini(videoPath, settings, onProgressUpdate
 
     const startTimeSeconds = currentBatch * secondsPerBatch;
     const audioChunkPath = path.join(tempFolders.audio, `audio_chunk_${currentBatch}.mp3`);
-    const framePattern = path.join(
-      tempFolders.frames,
-      `batch_${currentBatch}_frame-%d.${config.FRAME_FORMAT}`
-    );
+    const framePattern = path.join(tempFolders.frames,`batch_${currentBatch}_frame-%d.${config.FRAME_FORMAT}`);
 
     await new Promise((resolve, reject) => {
-      ffmpeg(videoPath)
-        .inputOptions([`-ss ${startTimeSeconds}`])
-        .outputOptions([
-          `-t ${secondsPerBatch}`,
-          `-vf fps=1/${frameInterval},scale=${config.FRAME_WIDTH}:-1`,
-          `-qscale:v ${config.FRAME_QUALITY}`,
-        ])
-        .output(framePattern)
-        .noAudio()
-        .on('end', resolve)
-        .on('error', (err) => {
+      ffmpeg(videoPath).inputOptions([`-ss ${startTimeSeconds}`]).outputOptions([`-t ${secondsPerBatch}`,`-vf fps=1/${frameInterval},scale=${config.FRAME_WIDTH}:-1`,`-qscale:v ${config.FRAME_QUALITY}`,]).output(framePattern).noAudio().on('end', resolve).on('error', (err) => {
           send({ type: 'error', message: `FFmpeg frame extraction error: ${err.message}` });
           reject(err);
-        })
-        .run();
+      }).run();
     });
 
     let audioFile = null;
     let audioExtractionFailed = false;
     await new Promise((resolve) => {
-      ffmpeg(videoPath)
-        .inputOptions([`-ss ${startTimeSeconds}`])
-        .outputOptions([`-t ${secondsPerBatch}`])
-        .output(audioChunkPath)
-        .noVideo()
-        .audioCodec('libmp3lame')
-        .on('end', resolve)
-        .on('error', () => {
+      ffmpeg(videoPath).inputOptions([`-ss ${startTimeSeconds}`]).outputOptions([`-t ${secondsPerBatch}`]).output(audioChunkPath).noVideo().audioCodec('libmp3lame').on('end', resolve).on('error', () => {
           audioExtractionFailed = true;
           send({ type: 'status', message: uiTexts.noAudioStream });
           resolve();
-        })
-        .run();
+      }).run();
     });
+
     if (!audioExtractionFailed) {
       audioFile = await uploadFileToGemini(audioChunkPath, "audio/mp3", onProgressUpdate);
       if (!audioFile) {
@@ -156,10 +133,7 @@ async function analyzeVideoInBatchesGemini(videoPath, settings, onProgressUpdate
     const imageParts = [];
     for (const file of frameFiles) {
       const mimeType = config.FRAME_FORMAT === 'png' ? 'image/png' : 'image/jpeg';
-      const part = await fileToGenerativePart(
-        path.join(tempFolders.frames, file),
-        mimeType
-      );
+      const part = await fileToGenerativePart(path.join(tempFolders.frames, file), mimeType);
       if (part) imageParts.push(part);
       await fsPromises.unlink(path.join(tempFolders.frames, file)).catch(() => {});
     }
@@ -224,7 +198,7 @@ async function analyzeVideoInBatchesGemini(videoPath, settings, onProgressUpdate
   for (const fileName of uploadedFileNames) { try { await axios.delete(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GOOGLE_API_KEY}`); } catch (err) {} }
   for (const folder of Object.values(tempFolders)) { await fsPromises.rm(folder, { recursive: true, force: true }).catch(() => {}); }
   send({ type: 'status', message: uiTexts.cleanupComplete });
-
+  
   return finalCumulativeAnalysis;
 }
 
