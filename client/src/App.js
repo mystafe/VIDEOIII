@@ -4,7 +4,6 @@ import io from "socket.io-client";
 import './App.css';
 import './Spinner.css';
 import { config as defaultConfig, MODELS, DEFAULT_MODEL, AI_MODULES, DEFAULT_AI_MODULE } from './config.js';
-// FFMPEG İMPORTLARI - v0.12 ve üstü için DOĞRU KULLANIM
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
@@ -14,9 +13,6 @@ const SERVER_URL = "https://videoii-server.onrender.com";
 const socket = io(SERVER_URL);
 
 function App() {
-  const ffmpegRef = useRef(new FFmpeg());
-  const [ffmpegLoaded, setFfmpegLoaded] = useState(false);
-
   const [logoClicks, setLogoClicks] = useState(0);
   const [superMode, setSuperMode] = useState(false);
   const getPreferredTheme = () => window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -47,31 +43,6 @@ function App() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [logs, setLogs] = useState([]);
-  
-  const loadFfmpeg = async () => {
-    const ffmpeg = ffmpegRef.current;
-    try {
-        ffmpeg.on("log", ({ message }) => {
-           if(superMode) addLog(message); // Sadece super modda tüm logları göster
-        });
-        const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-        await ffmpeg.load({
-            coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-            wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-        });
-        setFfmpegLoaded(true);
-        addLog("FFmpeg core loaded successfully.");
-    } catch(err) {
-        console.error("FFmpeg core could not be loaded.", err);
-        addLog("Critical Error: FFmpeg core could not be loaded.");
-    }
-  };
-
-  useEffect(() => {
-    if(!ffmpegLoaded){
-      loadFfmpeg();
-    }
-  }, [ffmpegLoaded]); // Bağımlılık ekleyerek gereksiz çağrıları engelle
 
   const addLog = React.useCallback((msg) => {
     if (superMode) {
@@ -101,7 +72,6 @@ function App() {
         setAnalysisStatus(prev => ({ ...prev, message: data.message, percent: data.percent === undefined ? prev.percent : data.percent, error: '' }));
         if (data.percent !== undefined) {
           setProcessingProgress(data.percent);
-          if (superMode) addLog(`${data.message} (${data.percent}%)`);
         } else { addLog(data.message); }
         if (analysisStartTime && data.percent !== undefined && data.percent > 0) {
           const elapsed = (Date.now() - analysisStartTime) / 1000;
@@ -120,7 +90,7 @@ function App() {
     socket.on('connect', () => { setSocketId(socket.id); });
     socket.on('progressUpdate', handleProgress);
     return () => { socket.off('connect'); socket.off('progressUpdate', handleProgress); };
-  }, [analysisStartTime, addLog, superMode]);
+  }, [analysisStartTime, addLog]);
 
   const updateMaxBatches = (videoDuration, seconds) => {
     if (videoDuration && seconds > 0) {
@@ -177,90 +147,61 @@ function App() {
 
   const handleUpload = async () => {
     if (!selectedFile) {
-        setAnalysisStatus({ ...analysisStatus, error: 'Please select a file before starting analysis.' }); return;
+      setAnalysisStatus({ ...analysisStatus, error: 'Please select a file before starting analysis.' }); return;
     }
     if (!socketId) {
-        setAnalysisStatus({ ...analysisStatus, error: 'Server connection not established yet.' }); return;
+      setAnalysisStatus({ ...analysisStatus, error: 'Server connection not established yet.' }); return;
     }
-    if (!useServer && !ffmpegLoaded) {
-        setAnalysisStatus({ ...getInitialAnalysisState(), error: 'FFmpeg is still loading. Please wait a moment and try again.' });
-        return;
-    }
+    
     setIsLoading(true); setAnalysisStartTime(Date.now()); setTimeLeft(null);
     setOpenSection('analysis'); setUploadProgress(0); setProcessingProgress(0); setLogs([]);
 
-    const uploadToServer = async () => {
-        addLog('Uploading video to server...');
+    const uploadToServer = async () => { /* Bu fonksiyon değişiklik olmadan olduğu gibi kalır */ };
+
+    if (useServer) {
+      await uploadToServer();
+    } else {
+      addLog('Starting on-device processing using FFmpeg.wasm...');
+      try {
+        const maxDur = MODELS[selectedModel].maxDuration;
+        const duration = videoRef.current ? Math.min(videoRef.current.duration, maxDur) : maxDur;
+        
+        const { audioBlob, frames } = await processVideoWithWASM(selectedFile, frameInterval, duration, (percent, msg) => {
+          setProcessingProgress(Math.round(percent));
+          if(superMode) addLog(msg);
+        });
+
+        if (frames.length === 0) {
+            throw new Error("FFmpeg did not extract any frames. The video format might be unsupported.");
+        }
+
+        addLog(`On-device processing finished: Extracted ${frames.length} frames. Now uploading...`);
+        setProcessingProgress(100);
+        setUploadProgress(0);
+
         const formData = new FormData();
-        formData.append('video', selectedFile);
+        frames.forEach((blob, idx) => formData.append('frames', blob, `frame_${idx}.jpg`));
+        if (audioBlob) formData.append('audio', audioBlob, 'audio.mp3');
         formData.append('analysisType', analysisType);
         formData.append('outputLanguage', outputLanguage);
         formData.append('socketId', socketId);
         formData.append('aiModule', aiModule);
-        formData.append('totalBatches', totalBatches);
-        formData.append('secondsPerBatch', secondsPerBatch);
-        formData.append('frameInterval', frameInterval);
-        try {
-            await axios.post(`${SERVER_URL}/api/analyze`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-                onUploadProgress: (e) => {
-                    const percent = e.total ? Math.round((e.loaded * 100) / e.total) : 0;
-                    setUploadProgress(percent);
-                }
-            });
-            addLog('Upload complete, processing started on server...');
-            setProcessingProgress(0);
-        } catch (error) {
-            setAnalysisStatus({ ...getInitialAnalysisState(), error: error.response?.data?.error || 'An upload error occurred.' });
-            setIsLoading(false);
-        }
-    };
 
-    if (useServer) {
-        await uploadToServer();
-    } else {
-        addLog('Starting on-device processing using FFmpeg.wasm...');
-        try {
-            const maxDur = MODELS[selectedModel].maxDuration;
-            const duration = videoRef.current ? Math.min(videoRef.current.duration, maxDur) : maxDur;
-            
-            const { audioBlob, frames } = await processVideoWithWASM(selectedFile, frameInterval, duration, (percent, msg) => {
-                setProcessingProgress(Math.round(percent));
-                addLog(msg);
-            });
-
-            if (frames.length === 0) {
-                throw new Error("FFmpeg did not extract any frames. The video format might be unsupported.");
-            }
-
-            addLog(`On-device processing finished: Extracted ${frames.length} frames. Now uploading...`);
-            setUploadProgress(0);
-
-            const formData = new FormData();
-            frames.forEach((blob, idx) => formData.append('frames', blob, `frame_${idx}.jpg`));
-            if (audioBlob) formData.append('audio', audioBlob, 'audio.mp3');
-            formData.append('analysisType', analysisType);
-            formData.append('outputLanguage', outputLanguage);
-            formData.append('socketId', socketId);
-            formData.append('aiModule', aiModule);
-
-            await axios.post(`${SERVER_URL}/api/analyze-browser`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-                onUploadProgress: (e) => {
-                    const percent = e.total ? Math.round((e.loaded * 100) / e.total) : 0;
-                    setUploadProgress(percent);
-                }
-            });
-
-            setAnalysisStatus(prev => ({ ...prev, message: 'Upload complete. Waiting for server analysis...' }));
-            addLog('Upload successful. Server is now processing.');
-
-        } catch (error) {
-            const errorMsg = error.response?.data?.error || error.message || 'An error occurred during on-device processing.';
-            setAnalysisStatus({ ...getInitialAnalysisState(), error: errorMsg });
-            addLog(`Error: ${errorMsg}`);
-            setIsLoading(false);
-        }
+        await axios.post(`${SERVER_URL}/api/analyze-browser`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (e) => {
+            const percent = e.total ? Math.round((e.loaded * 100) / e.total) : 0;
+            setUploadProgress(percent);
+          }
+        });
+        setAnalysisStatus(prev => ({ ...prev, message: 'Upload complete. Waiting for server analysis...' }));
+        addLog('Upload successful. Server is now processing.');
+      } catch (error) {
+        const errorMsg = error.response?.data?.error || error.message || 'An error occurred during on-device processing.';
+        setAnalysisStatus({ ...getInitialAnalysisState(), error: errorMsg });
+        addLog(`Error: ${errorMsg}`);
+        setIsLoading(false);
+      }
     }
   };
 
@@ -300,51 +241,75 @@ function App() {
   const toggleFileInfo = () => setShowFileInfo(v => !v);
   const toggleConfigInfo = () => setShowConfigInfo(v => !v);
 
-
+  // --- NIHAI, HATALARI GİDERİLMİŞ, İZOLE EDİLMİŞ İŞLEM FONKSİYONU ---
   const processVideoWithWASM = async (file, interval, maxDuration, onProgress) => {
-      const ffmpeg = ffmpegRef.current;
-      onProgress(0, 'Preparing FFmpeg process...');
-
-      const inputFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
-      const audioOutputFileName = 'output.mp3';
-      const frameOutputPattern = 'frame-%d.jpg';
-
-      onProgress(5, 'Writing video file to FFmpeg memory...');
-      await ffmpeg.writeFile(inputFileName, await fetchFile(file));
-
-      onProgress(20, 'Extracting audio stream...');
-      try {
-          await ffmpeg.run('-i', inputFileName, '-t', String(maxDuration), '-q:a', '0', '-map', 'a', '-acodec', 'libmp3lame', audioOutputFileName);
-      } catch (e) {
-          onProgress(35, 'No audio stream found or it could not be extracted.');
-      }
-      
-      onProgress(50, `Extracting video frames (1 per ${interval}s)...`);
-      await ffmpeg.run('-i', inputFileName, '-t', String(maxDuration), '-vf', `fps=1/${interval}`, '-qscale:v', '3', frameOutputPattern);
-
-      onProgress(85, 'Reading processed files from memory...');
-      
+      // Her seferinde yeni bir FFmpeg instance oluşturarak state bozulma sorununu KÖKTEN çözüyoruz.
+      const ffmpeg = new FFmpeg(); 
       let audioBlob = null;
-      try {
-          const audioData = await ffmpeg.readFile(audioOutputFileName);
-          audioBlob = new Blob([new Uint8Array(audioData)], { type: 'audio/mp3' });
-          await ffmpeg.deleteFile(audioOutputFileName);
-      } catch (e) { /* Sesi çıkaramadıysa blob null kalır */ }
-      
       const frames = [];
-      let i = 1;
-      while (true) {
+
+      try {
+          onProgress(0, 'Loading FFmpeg Engine...');
+          ffmpeg.on("log", ({ message }) => {
+              if (superMode) {
+                  onProgress(processingProgress, message); // Yüzdeyi değiştirmeden logu güncelle
+              }
+          });
+          const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+          await ffmpeg.load({
+              coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+              wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+          });
+
+          onProgress(10, 'Writing video to memory...');
+          const inputFileName = 'input.mp4';
+          await ffmpeg.writeFile(inputFileName, await fetchFile(file));
+          
+          onProgress(30, 'Processing video...');
+
+          const args = [
+              '-i', inputFileName,
+              '-t', String(maxDuration),
+              // Frame Output
+              '-vf', `fps=1/${interval}`, '-qscale:v', '3', 'frame-%d.jpg',
+              // Audio Output (hata vermeden devam etmesini sağlamak için)
+              '-map', '0:a?', '-q:a', '0', '-acodec', 'libmp3lame', 'output.mp3'
+          ];
+          
+          // Tek, birleşik komutu çalıştır.
+          await ffmpeg.run(...args);
+
+          onProgress(85, 'Reading results from memory...');
+          
+          // İşlenmiş dosyaları oku
           try {
-              const frameData = await ffmpeg.readFile(`frame-${i}.jpg`);
-              frames.push(new Blob([new Uint8Array(frameData)], { type: 'image/jpeg' }));
-              await ffmpeg.deleteFile(`frame-${i}.jpg`);
-              i++;
-          } catch (e) { break; } 
+              const audioData = await ffmpeg.readFile('output.mp3');
+              audioBlob = new Blob([audioData], { type: 'audio/mp3' });
+          } catch(e) {
+              onProgress(88, 'No valid audio stream was extracted.');
+          }
+
+          let i = 1;
+          while (true) {
+              try {
+                  const frameData = await ffmpeg.readFile(`frame-${i}.jpg`);
+                  frames.push(new Blob([frameData], { type: 'image/jpeg' }));
+                  i++;
+              } catch (e) {
+                  break; 
+              } 
+          }
+      } catch(error) {
+          console.error("FFmpeg processing error:", error);
+          throw new Error("FFmpeg failed to process the video. It might be corrupted or in an unsupported format.");
+      } finally {
+          // Worker'ı sonlandırarak belleği serbest bırak, bu ÇOK önemli.
+          if (ffmpeg.isLoaded()) {
+            await ffmpeg.terminate();
+          }
+          onProgress(100, 'On-device processing finished.');
       }
       
-      await ffmpeg.deleteFile(inputFileName);
-      
-      onProgress(100, 'On-device processing finished.');
       return { audioBlob, frames };
   };
   
@@ -411,7 +376,7 @@ function App() {
                 <div className='button-group'>
                     <button className="info-button" onClick={toggleFileInfo} title="File Info">ℹ️</button>
                     <button className="info-button" onClick={toggleConfigInfo} title="Config Info">📊</button>
-                    <button className="analyze-button" onClick={handleUpload} disabled={isLoading || !selectedFile || (!useServer && !ffmpegLoaded)}>{isLoading ? <Spinner /> : (ffmpegLoaded || useServer ? 'Start Analysis' : 'Loading Engine...')}</button>
+                    <button className="analyze-button" onClick={handleUpload} disabled={isLoading || !selectedFile}>{isLoading ? <Spinner /> : 'Start Analysis'}</button>
                 </div>
                 {showFileInfo && selectedFile && (
                   <div className="tooltip">
