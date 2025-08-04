@@ -22,7 +22,6 @@ function App() {
   const [secondsPerBatch, setSecondsPerBatch] = useState(MODELS[DEFAULT_MODEL].secondsPerBatch);
   const [frameInterval, setFrameInterval] = useState(MODELS[DEFAULT_MODEL].videoFrame);
   const [useServer, setUseServer] = useState(false);
-  // const [socket2, setSocket2] = useState(defaultConfig.SOCKET);
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [analysisType, setAnalysisType] = useState('general');
@@ -156,6 +155,7 @@ function App() {
       }
     }
   }, [selectedModel, analysisType, superMode, useServer]);
+
   const handleUpload = async () => {
     if (!selectedFile) {
       const msg = 'Please select a file before starting analysis.';
@@ -176,6 +176,7 @@ function App() {
     setUploadProgress(0);
     setProcessingProgress(0);
     setLogs([]);
+
     const uploadToServer = async () => {
       setAnalysisStatus({ message: 'Uploading video...', percent: 0, result: '', error: '' });
       addLog('Uploading video to server...');
@@ -183,6 +184,8 @@ function App() {
       let uploadFile = selectedFile;
       if (videoRef.current && durationNeeded < videoRef.current.duration) {
         try {
+          // Note: trimVideo may also fail on iPhone as it uses captureStream.
+          // The catch block ensures we send the full file in that case.
           uploadFile = await trimVideo(selectedFile, durationNeeded);
         } catch (e) {
           console.error('Trim failed, sending full file', e);
@@ -260,6 +263,7 @@ function App() {
       }
     }
   };
+
   const handleReset = () => {
     setIsLoading(false);
     setAnalysisStartTime(null);
@@ -270,7 +274,6 @@ function App() {
     setTotalBatches(1);
     setSecondsPerBatch(MODELS[DEFAULT_MODEL].secondsPerBatch);
     setFrameInterval(MODELS[DEFAULT_MODEL].videoFrame);
-    // setSocket(defaultConfig.SOCKET);
     setMaxBatchesAllowed(10);
     setLogoClicks(0);
     setSuperMode(false);
@@ -278,11 +281,13 @@ function App() {
     setAiModule(DEFAULT_AI_MODULE);
     if (fileInputRef.current) { fileInputRef.current.value = ''; }
   };
+
   const handleLogoClick = () => {
     const newClickCount = logoClicks + 1;
     setLogoClicks(newClickCount);
     if (newClickCount >= 5 && !superMode) { setSuperMode(true); console.log("Super Mode Activated!"); }
   };
+
   const handleBatchChange = (e) => {
     let value = parseInt(e.target.value, 10);
     const max = Math.min(maxBatchesAllowed, superMode ? 100 : 10);
@@ -290,6 +295,7 @@ function App() {
     if (value < 1) value = 1;
     setTotalBatches(value);
   }
+  
   const handleSecondsChange = (e) => {
     let value = parseInt(e.target.value, 10);
     const max = superMode ? 600 : 60;
@@ -298,100 +304,114 @@ function App() {
     setSecondsPerBatch(value);
     if (videoRef.current && videoRef.current.duration) { updateMaxBatches(videoRef.current.duration, value); }
   };
+
   const toggleSection = (section) => {
     setOpenSection(prev => (prev === section ? null : section));
   };
+  
   const toggleFileInfo = () => setShowFileInfo(v => !v);
+  
   const toggleConfigInfo = () => setShowConfigInfo(v => !v);
 
+
+  // --- DEĞİŞTİRİLEN VE İYİLEŞTİRİLEN FONKSİYON ---
+  // Bu fonksiyon artık 'captureStream' desteği olmayan tarayıcılarda (örn. iPhone Safari) hata vermek yerine
+  // sadece görsel işleme yapacak şekilde güncellendi.
   const processVideoOnDevice = (file, interval, maxDuration, onProgress) => {
     return new Promise((resolve, reject) => {
       try {
         if (!file || !file.type.startsWith('video')) {
-          const msg = 'Selected file is not a valid video.';
-          onProgress && onProgress(0, msg);
-          return reject(new Error(msg));
+          return reject(new Error('Selected file is not a valid video.'));
         }
-        if (typeof MediaRecorder === 'undefined') {
-          const msg = 'MediaRecorder API is not supported.';
-          onProgress && onProgress(0, msg);
-          return reject(new Error(msg));
-        }
+
         const video = document.createElement('video');
         video.src = URL.createObjectURL(file);
         video.muted = true;
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         const frames = [];
+
+        // Önce API'lerin varlığını ve desteğini kontrol et
+        const captureStreamMethod = video.captureStream || video.mozCaptureStream;
+        const audioCaptureSupported = !!captureStreamMethod && !!window.MediaRecorder;
+
         let audioChunks = [];
-        const captureStream = video.captureStream || video.mozCaptureStream || video.webkitCaptureStream;
-        if (!captureStream) {
-          const msg = 'Stream capture is not supported in this browser.';
-          onProgress && onProgress(0, msg);
-          return reject(new Error(msg));
+        let recorder = null;
+
+        if (!audioCaptureSupported) {
+          console.warn("Audio capture is not supported by this browser. Proceeding with frame extraction only.");
+          onProgress && onProgress(0, 'Warning: Audio capture not supported. Visual analysis only.');
         }
+
         video.onloadedmetadata = () => {
-          onProgress && onProgress(0, 'Metadata loaded');
+          onProgress && onProgress(0, 'Video metadata loaded');
           const duration = Math.min(video.duration, maxDuration);
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
-          const stream = captureStream.call(video);
-          const audioTracks = stream.getAudioTracks();
-          const audioStream = new MediaStream(audioTracks);
-          const recorder = new MediaRecorder(audioStream);
-          recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
-          recorder.onerror = (e) => {
-            console.error('Recorder error', e);
-            onProgress && onProgress(0, 'Audio recorder error');
-            reject(e);
-          };
-          recorder.onstart = () => onProgress && onProgress(0, 'Audio recording started');
+          
+          // SADECE DESTEKLENİYORSA ses kaydediciyi ayarla
+          if (audioCaptureSupported) {
+            const stream = captureStreamMethod.call(video);
+            const audioTracks = stream.getAudioTracks();
+            if (audioTracks.length > 0) {
+              const audioStream = new MediaStream(audioTracks);
+              recorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' });
+              recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+              recorder.onerror = (e) => console.error('MediaRecorder error:', e);
+            } else {
+              onProgress && onProgress(0, 'No audio tracks found in video.');
+            }
+          }
+          
           let lastPercent = 0;
-          const capture = () => {
+          const captureFrame = () => {
             try {
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-              canvas.toBlob((blob) => { if (blob) frames.push(blob); else console.warn('Frame capture returned null blob'); }, 'image/jpeg', 0.7);
+              canvas.toBlob((blob) => { if (blob) frames.push(blob); }, 'image/jpeg', 0.7);
               const percent = (video.currentTime / duration) * 100;
               if (onProgress && percent - lastPercent >= 1) {
                 lastPercent = percent;
-                onProgress(percent, 'Capturing frames');
+                onProgress(percent, 'Capturing frames...');
               }
             } catch (e) {
               console.error('Frame capture error', e);
-              onProgress && onProgress(0, 'Frame capture error');
-              reject(e);
             }
           };
-          onProgress && onProgress(0, 'Starting device processing');
-          capture();
-          const intervalId = setInterval(() => {
-            if (video.currentTime >= duration) {
-              video.pause();
-            } else {
-              capture();
-            }
-          }, interval * 1000);
+
+          const intervalId = setInterval(captureFrame, interval * 1000);
+
           video.onpause = () => {
             clearInterval(intervalId);
-            recorder.stop();
-            onProgress && onProgress(0, 'Video paused, stopping recorder');
-          };
-          recorder.start();
-          video.play();
-          setTimeout(() => video.pause(), duration * 1000);
-          recorder.onstop = () => {
-            const audioBlob = audioChunks.length ? new Blob(audioChunks, { type: 'audio/webm' }) : null;
-            onProgress && onProgress(100, 'Device processing complete');
+            const audioBlob = audioChunks.length > 0 ? new Blob(audioChunks, { type: 'audio/webm' }) : null;
+            onProgress && onProgress(100, 'Device processing complete.');
             resolve({ audioBlob, frames });
           };
+          
+          video.ontimeupdate = () => {
+            if (video.currentTime >= duration) {
+              if (!video.paused) {
+                 video.pause();
+                 if (recorder && recorder.state === "recording") {
+                    recorder.stop();
+                 }
+              }
+            }
+          };
+
+          video.play().catch(reject);
+          if (recorder) {
+            recorder.start();
+          }
+
+          setTimeout(() => {
+              if (!video.paused) video.pause();
+          }, duration * 1000 + 200);
+
         };
-        video.onerror = (e) => {
-          console.error('Video element error', e);
-          onProgress && onProgress(0, 'Video element error');
-          reject(e);
-        };
+
+        video.onerror = (e) => reject(new Error('Video element could not be loaded.'));
+
       } catch (err) {
-        console.error('Device processing error', err);
         reject(err);
       }
     });
@@ -422,6 +442,7 @@ function App() {
       }
     });
   };
+  
   return (
     <div className="App">
       <div className="container">
@@ -475,7 +496,7 @@ function App() {
                     <>
                       <div className="form-group"><label htmlFor="total-batches">Total Batches (Max: {Math.min(maxBatchesAllowed, superMode ? 100 : 10)})</label><input id="total-batches" type="number" value={totalBatches} onChange={handleBatchChange} min="1" max={Math.min(maxBatchesAllowed, superMode ? 100 : 10)} disabled={isLoading || !selectedFile} /></div>
                       <div className="form-group"><label htmlFor="seconds-per-batch">Batch Duration (seconds)</label><input id="seconds-per-batch" type="number" value={secondsPerBatch} onChange={handleSecondsChange} min="10" max="600" step="10" disabled={isLoading} /></div>
-                      <div className="form-group"><label htmlFor="frame-interval">Frame Interval (sec)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(e.target.value)} min="0.1" step="0.1" disabled={isLoading} /></div>
+                      <div className="form-group"><label htmlFor="frame-interval">Frame Interval (sec)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(Number(e.target.value))} min="0.1" step="0.1" disabled={isLoading} /></div>
                     </>
                   )}
                   <div className="form-group"><label htmlFor="analysis-type">Analysis Type</label><select id="analysis-type" value={analysisType} onChange={(e) => setAnalysisType(e.target.value)} disabled={isLoading}><option value="general">General Analysis</option><option value="meeting">Meeting Analysis</option></select></div>
@@ -489,15 +510,18 @@ function App() {
             <h2 onClick={() => toggleSection('upload')}><span className="step-number">2</span> Upload Video<span className="accordion-icon">{openSection === 'upload' ? '▲' : '▼'}</span></h2>
             {openSection === 'upload' && (
               <>
-                <input id="file-upload" type="file" accept="video/*" onChange={handleFileChange} disabled={isLoading} ref={fileInputRef} />
+                <input id="file-upload" type="file" accept="video/*" onChange={handleFileChange} disabled={isLoading} ref={fileInputRef} style={{ display: 'none' }} />
                 <label htmlFor="file-upload" className={`upload-button ${selectedFile ? 'file-selected' : ''}`}>{selectedFile ? selectedFile.name : 'Choose a video file...'}</label>
                 {previewUrl && (
                   <div className="video-preview-container">
                     <video controls src={previewUrl} width="100%" ref={videoRef} onLoadedMetadata={handleVideoMetadata} />
                   </div>
                 )}
-                <button className="info-button" onClick={toggleFileInfo}>ℹ️</button>
-                <button className="info-button" onClick={toggleConfigInfo}>📊</button>
+                <div className='button-group'>
+                    <button className="info-button" onClick={toggleFileInfo} title="File Info">ℹ️</button>
+                    <button className="info-button" onClick={toggleConfigInfo} title="Config Info">📊</button>
+                    <button className="analyze-button" onClick={handleUpload} disabled={isLoading || !selectedFile}>{isLoading ? <Spinner /> : null}{isLoading ? 'Analyzing...' : 'Start Analysis'}</button>
+                </div>
                 {showFileInfo && selectedFile && (
                   <div className="tooltip">
                     <p>Name: {selectedFile.name}</p>
@@ -507,15 +531,15 @@ function App() {
                 )}
                 {showConfigInfo && (
                   <div className="tooltip">
+                    <p>Module: {aiModule}</p>
                     <p>Model: {selectedModel}</p>
-                    <p>Batches: {totalBatches}</p>
-                    <p>Batch Duration: {secondsPerBatch} seconds</p>
-                    <p>Frame Interval: {frameInterval}</p>
+                    {superMode && useServer && <p>Batches: {totalBatches}</p>}
+                    {superMode && useServer && <p>Batch Len: {secondsPerBatch}s</p>}
+                    <p>Frame Rate: 1 every {frameInterval}s</p>
                     <p>Type: {analysisType}</p>
                     <p>Language: {outputLanguage}</p>
                   </div>
                 )}
-                <button className="analyze-button" onClick={handleUpload} disabled={isLoading || !selectedFile}>{isLoading ? <Spinner /> : null}{isLoading ? 'Analyzing...' : 'Start Analysis'}</button>
               </>
             )}
           </div>
@@ -530,7 +554,7 @@ function App() {
                   <p>Processing</p>
                   <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${processingProgress}%` }}></div></div>
                   {isLoading && timeLeft !== null && (
-                    <p className="time-remaining">Tahmini kalan süre: {timeLeft} sn</p>
+                    <p className="time-remaining">Estimated time left: {timeLeft}s</p>
                   )}
                   {!analysisStatus.result && <p className="status-message">{analysisStatus.message}</p>}
                   {superMode && logs.length > 0 && (
@@ -542,7 +566,7 @@ function App() {
                   {analysisStatus.result && (
                     <div className="result-container">
                       <h4>Analysis Report:</h4>
-                      <div className="report-content">{analysisStatus.result}</div>
+                      <div className="report-content" dangerouslySetInnerHTML={{ __html: analysisStatus.result }}></div>
                     </div>
                   )}
                   {!isLoading && (<button className="reset-button" onClick={handleReset}>Start New Analysis</button>)}
