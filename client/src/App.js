@@ -72,7 +72,9 @@ function App() {
         setAnalysisStatus(prev => ({ ...prev, message: data.message, percent: data.percent === undefined ? prev.percent : data.percent, error: '' }));
         if (data.percent !== undefined) {
           setProcessingProgress(data.percent);
-        } else { addLog(data.message); }
+        }
+        if (superMode) { addLog(data.message) };
+
         if (analysisStartTime && data.percent !== undefined && data.percent > 0) {
           const elapsed = (Date.now() - analysisStartTime) / 1000;
           const estimatedTotal = elapsed / (data.percent / 100);
@@ -90,7 +92,7 @@ function App() {
     socket.on('connect', () => { setSocketId(socket.id); });
     socket.on('progressUpdate', handleProgress);
     return () => { socket.off('connect'); socket.off('progressUpdate', handleProgress); };
-  }, [analysisStartTime, addLog]);
+  }, [analysisStartTime, addLog, superMode]);
 
   const updateMaxBatches = (videoDuration, seconds) => {
     if (videoDuration && seconds > 0) {
@@ -110,6 +112,9 @@ function App() {
         return;
       }
       setSelectedFile(file);
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
       setPreviewUrl(URL.createObjectURL(file));
       setAnalysisStatus({ message: `File selected: ${file.name}. Ready to start.`, percent: 0, result: '', error: '' });
       setMaxBatchesAllowed(1000);
@@ -147,67 +152,99 @@ function App() {
 
   const handleUpload = async () => {
     if (!selectedFile) {
-      setAnalysisStatus({ ...analysisStatus, error: 'Please select a file before starting analysis.' }); return;
+        setAnalysisStatus({ ...analysisStatus, error: 'Please select a file before starting analysis.' }); return;
     }
     if (!socketId) {
-      setAnalysisStatus({ ...analysisStatus, error: 'Server connection not established yet.' }); return;
+        setAnalysisStatus({ ...analysisStatus, error: 'Server connection not established yet.' }); return;
     }
     
     setIsLoading(true); setAnalysisStartTime(Date.now()); setTimeLeft(null);
     setOpenSection('analysis'); setUploadProgress(0); setProcessingProgress(0); setLogs([]);
 
-    const uploadToServer = async () => { /* Bu fonksiyon değişiklik olmadan olduğu gibi kalır */ };
-
-    if (useServer) {
-      await uploadToServer();
-    } else {
-      addLog('Starting on-device processing using FFmpeg.wasm...');
-      try {
-        const maxDur = MODELS[selectedModel].maxDuration;
-        const duration = videoRef.current ? Math.min(videoRef.current.duration, maxDur) : maxDur;
-        
-        const { audioBlob, frames } = await processVideoWithWASM(selectedFile, frameInterval, duration, (percent, msg) => {
-          setProcessingProgress(Math.round(percent));
-          if(superMode) addLog(msg);
-        });
-
-        if (frames.length === 0) {
-            throw new Error("FFmpeg did not extract any frames. The video format might be unsupported.");
-        }
-
-        addLog(`On-device processing finished: Extracted ${frames.length} frames. Now uploading...`);
-        setProcessingProgress(100);
-        setUploadProgress(0);
-
+    const uploadToServer = async () => {
+        addLog('Uploading video to server...');
         const formData = new FormData();
-        frames.forEach((blob, idx) => formData.append('frames', blob, `frame_${idx}.jpg`));
-        if (audioBlob) formData.append('audio', audioBlob, 'audio.mp3');
+        formData.append('video', selectedFile);
         formData.append('analysisType', analysisType);
         formData.append('outputLanguage', outputLanguage);
         formData.append('socketId', socketId);
         formData.append('aiModule', aiModule);
+        formData.append('totalBatches', totalBatches);
+        formData.append('secondsPerBatch', secondsPerBatch);
+        formData.append('frameInterval', frameInterval);
+        try {
+            await axios.post(`${SERVER_URL}/api/analyze`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                onUploadProgress: (e) => {
+                    const percent = e.total ? Math.round((e.loaded * 100) / e.total) : 0;
+                    setUploadProgress(percent);
+                }
+            });
+            addLog('Upload complete, processing started on server...');
+            setProcessingProgress(0);
+        } catch (error) {
+            setAnalysisStatus({ ...getInitialAnalysisState(), error: error.response?.data?.error || 'An upload error occurred.' });
+            setIsLoading(false);
+        }
+    };
 
-        await axios.post(`${SERVER_URL}/api/analyze-browser`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          onUploadProgress: (e) => {
-            const percent = e.total ? Math.round((e.loaded * 100) / e.total) : 0;
-            setUploadProgress(percent);
-          }
-        });
-        setAnalysisStatus(prev => ({ ...prev, message: 'Upload complete. Waiting for server analysis...' }));
-        addLog('Upload successful. Server is now processing.');
-      } catch (error) {
-        const errorMsg = error.response?.data?.error || error.message || 'An error occurred during on-device processing.';
-        setAnalysisStatus({ ...getInitialAnalysisState(), error: errorMsg });
-        addLog(`Error: ${errorMsg}`);
-        setIsLoading(false);
-      }
+    if (useServer) {
+        await uploadToServer();
+    } else {
+        addLog('Starting on-device processing using FFmpeg.wasm...');
+        try {
+            const maxDur = MODELS[selectedModel].maxDuration;
+            const duration = videoRef.current ? Math.min(videoRef.current.duration, maxDur) : maxDur;
+            
+            const { audioBlob, frames } = await processVideoWithWASM(selectedFile, frameInterval, duration, (percent, msg) => {
+                setProcessingProgress(Math.round(percent));
+                addLog(msg);
+            });
+
+            if (frames.length === 0) {
+                throw new Error("FFmpeg did not extract any frames. The video format might be unsupported.");
+            }
+
+            addLog(`On-device processing finished: Extracted ${frames.length} frames. Now uploading...`);
+            setProcessingProgress(100);
+            setUploadProgress(0);
+
+            const formData = new FormData();
+            frames.forEach((blob, idx) => formData.append('frames', blob, `frame_${idx}.jpg`));
+            if (audioBlob) formData.append('audio', audioBlob, 'audio.mp3');
+            formData.append('analysisType', analysisType);
+            formData.append('outputLanguage', outputLanguage);
+            formData.append('socketId', socketId);
+            formData.append('aiModule', aiModule);
+
+            await axios.post(`${SERVER_URL}/api/analyze-browser`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                onUploadProgress: (e) => {
+                    const percent = e.total ? Math.round((e.loaded * 100) / e.total) : 0;
+                    setUploadProgress(percent);
+                }
+            });
+
+            setAnalysisStatus(prev => ({ ...prev, message: 'Upload complete. Waiting for server analysis...' }));
+            addLog('Upload successful. Server is now processing.');
+
+        } catch (error) {
+            const errorMsg = error.response?.data?.error || error.message || 'An error occurred during on-device processing.';
+            setAnalysisStatus({ ...getInitialAnalysisState(), error: errorMsg });
+            addLog(`Error: ${errorMsg}`);
+            setIsLoading(false);
+        }
     }
   };
 
   const handleReset = () => {
     setIsLoading(false); setAnalysisStartTime(null); setTimeLeft(null);
-    setSelectedFile(null); setPreviewUrl(null); setAnalysisStatus(getInitialAnalysisState());
+    setSelectedFile(null);
+    if(previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setPreviewUrl(null); 
+    setAnalysisStatus(getInitialAnalysisState());
     setTotalBatches(1); setSecondsPerBatch(MODELS[DEFAULT_MODEL].secondsPerBatch);
     setFrameInterval(MODELS[DEFAULT_MODEL].videoFrame); setMaxBatchesAllowed(10);
     setLogoClicks(0); setSuperMode(false); setLogs([]); setAiModule(DEFAULT_AI_MODULE);
@@ -241,19 +278,15 @@ function App() {
   const toggleFileInfo = () => setShowFileInfo(v => !v);
   const toggleConfigInfo = () => setShowConfigInfo(v => !v);
 
-  // --- NIHAI, HATALARI GİDERİLMİŞ, İZOLE EDİLMİŞ İŞLEM FONKSİYONU ---
   const processVideoWithWASM = async (file, interval, maxDuration, onProgress) => {
-      // Her seferinde yeni bir FFmpeg instance oluşturarak state bozulma sorununu KÖKTEN çözüyoruz.
-      const ffmpeg = new FFmpeg(); 
+      const ffmpeg = new FFmpeg();
       let audioBlob = null;
       const frames = [];
 
       try {
           onProgress(0, 'Loading FFmpeg Engine...');
           ffmpeg.on("log", ({ message }) => {
-              if (superMode) {
-                  onProgress(processingProgress, message); // Yüzdeyi değiştirmeden logu güncelle
-              }
+              if (superMode) onProgress(processingProgress, message);
           });
           const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
           await ffmpeg.load({
@@ -276,12 +309,9 @@ function App() {
               '-map', '0:a?', '-q:a', '0', '-acodec', 'libmp3lame', 'output.mp3'
           ];
           
-          // Tek, birleşik komutu çalıştır.
           await ffmpeg.run(...args);
-
           onProgress(85, 'Reading results from memory...');
           
-          // İşlenmiş dosyaları oku
           try {
               const audioData = await ffmpeg.readFile('output.mp3');
               audioBlob = new Blob([audioData], { type: 'audio/mp3' });
@@ -295,21 +325,16 @@ function App() {
                   const frameData = await ffmpeg.readFile(`frame-${i}.jpg`);
                   frames.push(new Blob([frameData], { type: 'image/jpeg' }));
                   i++;
-              } catch (e) {
-                  break; 
-              } 
+              } catch (e) { break; } 
           }
-      } catch(error) {
+      } catch (error) {
           console.error("FFmpeg processing error:", error);
           throw new Error("FFmpeg failed to process the video. It might be corrupted or in an unsupported format.");
       } finally {
-          // Worker'ı sonlandırarak belleği serbest bırak, bu ÇOK önemli.
           if (ffmpeg.isLoaded()) {
             await ffmpeg.terminate();
           }
-          onProgress(100, 'On-device processing finished.');
       }
-      
       return { audioBlob, frames };
   };
   
@@ -320,7 +345,7 @@ function App() {
           <h1 onClick={handleLogoClick}>VIDEOIII</h1>
           <p>Smart Video Analysis Platform</p>
           {superMode && (
-            <button className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Toggle theme">
+            <button className="theme-toggle" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} title="Toggle theme">
               {theme === 'dark' ? '☀️' : '🌙'}
             </button>
           )}
@@ -334,21 +359,21 @@ function App() {
                   <div className="form-group">
                     <label htmlFor="ai-module">AI Module</label>
                     <select id="ai-module" value={aiModule} onChange={(e) => setAiModule(e.target.value)} disabled={isLoading}>
-                      {Object.entries(AI_MODULES).map(([key, m]) => <option key={key} value={key}>{m.label}</option>)}
+                      {Object.entries(AI_MODULES).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
                     </select>
                   </div>
                 )}
                 <div className="form-group model-group">
                   <label htmlFor="model-select">Model</label>
                   <select id="model-select" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} disabled={isLoading}>
-                    {Object.entries(MODELS).map(([key, m]) => <option key={key} value={key}>{`${m.label} - ${m.note}`}</option>)}
+                    {Object.entries(MODELS).map(([k, m]) => <option key={k} value={k}>{`${m.label} - ${m.note}`}</option>)}
                   </select>
                 </div>
                 {superMode && (
                   <div className="form-group">
                     <label htmlFor="processing-mode">Processing</label>
                     <select id="processing-mode" value={useServer ? 'server' : 'device'} onChange={(e) => setUseServer(e.target.value === 'server')} disabled={isLoading}>
-                      <option value="device">Device (Recommended)</option>
+                      <option value="device">Device</option>
                       <option value="server">Server</option>
                     </select>
                   </div>
@@ -359,18 +384,17 @@ function App() {
                     <div className="form-group"><label>Batch Duration (s)</label><input type="number" value={secondsPerBatch} onChange={handleSecondsChange} min="1" max="600" disabled={isLoading} /></div>
                   </>
                 )}
-                 <div className="form-group"><label htmlFor="frame-interval">Frame Interval (s)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(Number(e.target.value))} min="1" max="60" step="1" disabled={isLoading || (superMode && useServer)} /></div>
+                <div className="form-group"><label htmlFor="frame-interval">Frame Interval (s)</label><input id="frame-interval" type="number" value={frameInterval} onChange={(e) => setFrameInterval(Number(e.target.value))} min="1" max="60" step="1" disabled={isLoading || (superMode && useServer)} /></div>
                 <div className="form-group"><label htmlFor="analysis-type">Analysis Type</label><select id="analysis-type" value={analysisType} onChange={(e) => setAnalysisType(e.target.value)} disabled={isLoading}><option value="general">General Analysis</option><option value="meeting">Meeting Analysis</option></select></div>
                 <div className="form-group"><label htmlFor="output-language">Report Language</label><select id="output-language" value={outputLanguage} onChange={(e) => setOutputLanguage(e.target.value)} disabled={isLoading}><option value="Turkish">Turkish</option><option value="English">English</option></select></div>
               </div>
             )}
           </div>
-
           <div className={`controls-card ${openSection === 'upload' ? 'open' : 'closed'}`}>
             <h2 onClick={() => toggleSection('upload')}><span className="step-number">2</span> Upload Video<span className="accordion-icon">{openSection === 'upload' ? '▲' : '▼'}</span></h2>
             {openSection === 'upload' && (
               <>
-                <input id="file-upload" type="file" accept="video/*,.mkv" onChange={handleFileChange} disabled={isLoading} ref={fileInputRef} style={{ display: 'none' }} />
+                <input id="file-upload" type="file" accept="video/*,.mkv,.webm" onChange={handleFileChange} disabled={isLoading} ref={fileInputRef} style={{ display: 'none' }} />
                 <label htmlFor="file-upload" className={`upload-button ${selectedFile ? 'file-selected' : ''}`}>{selectedFile ? selectedFile.name : 'Choose a video file...'}</label>
                 {previewUrl && <div className="video-preview-container"><video controls src={previewUrl} width="100%" ref={videoRef} onLoadedMetadata={handleVideoMetadata} playsInline /></div>}
                 <div className='button-group'>
@@ -395,19 +419,20 @@ function App() {
               </>
             )}
           </div>
-
           {(isLoading || analysisStatus.result || analysisStatus.error) && (
             <div className={`status-card ${openSection === 'analysis' ? 'open' : 'closed'}`}>
               <h2 onClick={() => toggleSection('analysis')}><span className="step-number">3</span> Analysis<span className="accordion-icon">{openSection === 'analysis' ? '▲' : '▼'}</span></h2>
               {openSection === 'analysis' && (
                 <>
-                  {isLoading && <>
-                    <p>On-Device Processing</p>
-                    <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${processingProgress}%` }}></div></div>
-                    <p>Upload</p>
-                    <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${uploadProgress}%` }}></div></div>
-                    {timeLeft !== null && <p className="time-remaining">Est. time remaining: {timeLeft}s</p>}
-                  </>}
+                  {isLoading &&
+                    <>
+                      <p>On-Device Processing</p>
+                      <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${processingProgress}%` }}></div></div>
+                      <p>Upload</p>
+                      <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${uploadProgress}%` }}></div></div>
+                      {timeLeft !== null && <p className="time-remaining">Est. time remaining: {timeLeft}s</p>}
+                    </>
+                  }
                   {!analysisStatus.result && <p className="status-message">{analysisStatus.message}</p>}
                   {superMode && logs.length > 0 && (
                     <div className="log-container">
