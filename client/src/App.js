@@ -248,8 +248,17 @@ function App() {
 
   const handleLogoClick = () => {
     const newClickCount = logoClicks + 1;
-    setLogoClicks(newClickCount);
-    if (newClickCount >= 5 && !superMode) { console.log("Super Mode Activated!"); setSuperMode(true); }
+    if (!superMode && newClickCount >= 5) {
+      console.log("Super Mode Activated!");
+      setSuperMode(true);
+      setLogoClicks(0);
+    } else if (superMode && newClickCount >= 5) {
+      console.log("Super Mode Deactivated!");
+      setSuperMode(false);
+      setLogoClicks(0);
+    } else {
+      setLogoClicks(newClickCount);
+    }
   };
 
   const handleBatchChange = (e) => {
@@ -364,14 +373,12 @@ function App() {
                     </select>
                   </div>
                 )}
-                {superMode && (
-                  <div className="form-group model-group">
-                    <label htmlFor="model-select">Model</label>
-                    <select id="model-select" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} disabled={isLoading}>
-                      {Object.entries(MODELS).map(([k, m]) => <option key={k} value={k}>{`${m.label} - ${m.note}`}</option>)}
-                    </select>
-                  </div>
-                )}
+                <div className="form-group model-group">
+                  <label htmlFor="model-select">Model</label>
+                  <select id="model-select" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} disabled={isLoading}>
+                    {Object.entries(MODELS).map(([k, m]) => <option key={k} value={k}>{`${m.label} - ${m.note}`}</option>)}
+                  </select>
+                </div>
                 {superMode && (
                   <div className="form-group">
                     <label htmlFor="processing-mode">Processing</label>
