@@ -4,9 +4,10 @@ import io from "socket.io-client";
 import './App.css';
 import './Spinner.css';
 import { config as defaultConfig, MODELS, DEFAULT_MODEL, AI_MODULES, DEFAULT_AI_MODULE } from './config.js';
-// FFMPEG İMPORTLARI - v0.12 ve üstü için doğru kullanım
-import { FFmpeg, fetchFile } from '@ffmpeg/ffmpeg';
-import { toBlobURL } from '@ffmpeg/util';
+// FFMPEG İMPORTLARI - v0.12 ve üstü için DOĞRU KULLANIM
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
+
 
 const Spinner = () => <div className="spinner"></div>;
 const SERVER_URL = "https://videoii-server.onrender.com";
@@ -48,10 +49,10 @@ function App() {
   const [logs, setLogs] = useState([]);
   
   const loadFfmpeg = async () => {
+    const ffmpeg = ffmpegRef.current;
     try {
-        const ffmpeg = ffmpegRef.current;
         ffmpeg.on("log", ({ message }) => {
-           addLog(message);
+           if(superMode) addLog(message); // Sadece super modda tüm logları göster
         });
         const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
         await ffmpeg.load({
@@ -67,8 +68,10 @@ function App() {
   };
 
   useEffect(() => {
-    loadFfmpeg();
-  }, []);
+    if(!ffmpegLoaded){
+      loadFfmpeg();
+    }
+  }, [ffmpegLoaded]); // Bağımlılık ekleyerek gereksiz çağrıları engelle
 
   const addLog = React.useCallback((msg) => {
     if (superMode) {
@@ -98,7 +101,7 @@ function App() {
         setAnalysisStatus(prev => ({ ...prev, message: data.message, percent: data.percent === undefined ? prev.percent : data.percent, error: '' }));
         if (data.percent !== undefined) {
           setProcessingProgress(data.percent);
-          addLog(`${data.message} (${data.percent}%)`);
+          if (superMode) addLog(`${data.message} (${data.percent}%)`);
         } else { addLog(data.message); }
         if (analysisStartTime && data.percent !== undefined && data.percent > 0) {
           const elapsed = (Date.now() - analysisStartTime) / 1000;
@@ -117,7 +120,7 @@ function App() {
     socket.on('connect', () => { setSocketId(socket.id); });
     socket.on('progressUpdate', handleProgress);
     return () => { socket.off('connect'); socket.off('progressUpdate', handleProgress); };
-  }, [analysisStartTime, addLog]);
+  }, [analysisStartTime, addLog, superMode]);
 
   const updateMaxBatches = (videoDuration, seconds) => {
     if (videoDuration && seconds > 0) {
@@ -187,30 +190,30 @@ function App() {
     setOpenSection('analysis'); setUploadProgress(0); setProcessingProgress(0); setLogs([]);
 
     const uploadToServer = async () => {
-      addLog('Uploading video to server...');
-      const formData = new FormData();
-      formData.append('video', selectedFile);
-      formData.append('analysisType', analysisType);
-      formData.append('outputLanguage', outputLanguage);
-      formData.append('socketId', socketId);
-      formData.append('aiModule', aiModule);
-      formData.append('totalBatches', totalBatches);
-      formData.append('secondsPerBatch', secondsPerBatch);
-      formData.append('frameInterval', frameInterval);
-      try {
-        await axios.post(`${SERVER_URL}/api/analyze`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          onUploadProgress: (e) => {
-            const percent = e.total ? Math.round((e.loaded * 100) / e.total) : 0;
-            setUploadProgress(percent);
-          }
-        });
-        addLog('Upload complete, processing started on server...');
-        setProcessingProgress(0);
-      } catch (error) {
-        setAnalysisStatus({ ...getInitialAnalysisState(), error: error.response?.data?.error || 'An upload error occurred.' });
-        setIsLoading(false);
-      }
+        addLog('Uploading video to server...');
+        const formData = new FormData();
+        formData.append('video', selectedFile);
+        formData.append('analysisType', analysisType);
+        formData.append('outputLanguage', outputLanguage);
+        formData.append('socketId', socketId);
+        formData.append('aiModule', aiModule);
+        formData.append('totalBatches', totalBatches);
+        formData.append('secondsPerBatch', secondsPerBatch);
+        formData.append('frameInterval', frameInterval);
+        try {
+            await axios.post(`${SERVER_URL}/api/analyze`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                onUploadProgress: (e) => {
+                    const percent = e.total ? Math.round((e.loaded * 100) / e.total) : 0;
+                    setUploadProgress(percent);
+                }
+            });
+            addLog('Upload complete, processing started on server...');
+            setProcessingProgress(0);
+        } catch (error) {
+            setAnalysisStatus({ ...getInitialAnalysisState(), error: error.response?.data?.error || 'An upload error occurred.' });
+            setIsLoading(false);
+        }
     };
 
     if (useServer) {
@@ -227,7 +230,7 @@ function App() {
             });
 
             if (frames.length === 0) {
-                throw new Error("FFmpeg did not extract any frames. The video format might be unsupported by this browser's codecs.");
+                throw new Error("FFmpeg did not extract any frames. The video format might be unsupported.");
             }
 
             addLog(`On-device processing finished: Extracted ${frames.length} frames. Now uploading...`);
@@ -408,7 +411,7 @@ function App() {
                 <div className='button-group'>
                     <button className="info-button" onClick={toggleFileInfo} title="File Info">ℹ️</button>
                     <button className="info-button" onClick={toggleConfigInfo} title="Config Info">📊</button>
-                    <button className="analyze-button" onClick={handleUpload} disabled={isLoading || !selectedFile || (!useServer && !ffmpegLoaded)}>{isLoading ? <Spinner /> : null}{isLoading ? 'Analyzing...' : 'Start Analysis'}</button>
+                    <button className="analyze-button" onClick={handleUpload} disabled={isLoading || !selectedFile || (!useServer && !ffmpegLoaded)}>{isLoading ? <Spinner /> : (ffmpegLoaded || useServer ? 'Start Analysis' : 'Loading Engine...')}</button>
                 </div>
                 {showFileInfo && selectedFile && (
                   <div className="tooltip">
