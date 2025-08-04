@@ -224,6 +224,8 @@ async function analyzeVideoInBatchesGemini(videoPath, settings, onProgressUpdate
   for (const fileName of uploadedFileNames) { try { await axios.delete(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GOOGLE_API_KEY}`); } catch (err) {} }
   for (const folder of Object.values(tempFolders)) { await fsPromises.rm(folder, { recursive: true, force: true }).catch(() => {}); }
   send({ type: 'status', message: uiTexts.cleanupComplete });
+
+  return finalCumulativeAnalysis;
 }
 
 async function analyzeUploadedMediaGemini(framePaths, audioPath, settings, onProgressUpdate) {
@@ -258,12 +260,15 @@ async function analyzeUploadedMediaGemini(framePaths, audioPath, settings, onPro
     promptParts.push({ fileData: { mimeType: audioFile.mimeType, fileUri: audioFile.uri } });
   }
 
+  let finalResult = '';
   try {
     const model = genAI.getGenerativeModel({ model: config.MODEL_NAME });
     const result = await model.generateContent({ contents: [{ role: "user", parts: promptParts }] });
-    send({ type: 'result', data: result.response.text() });
+    finalResult = result.response.text();
+    send({ type: 'result', data: finalResult });
   } catch (error) {
-    send({ type: 'error', message: `Gemini Analysis failed: ${error.message}` });
+    finalResult = `Gemini Analysis failed: ${error.message}`;
+    send({ type: 'error', message: finalResult });
   } finally {
     send({ type: 'status', message: uiTexts.cleanup });
     for (const fileName of uploadedFileNames) { try { await axios.delete(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GOOGLE_API_KEY}`); } catch (err) {} }
@@ -271,6 +276,7 @@ async function analyzeUploadedMediaGemini(framePaths, audioPath, settings, onPro
     if (audioPath) { await fsPromises.unlink(audioPath).catch(() => {}); }
     send({ type: 'status', message: uiTexts.cleanupComplete });
   }
+  return finalResult;
 }
 
 
@@ -373,19 +379,23 @@ async function analyzeVideoInBatchesOpenAI(videoPath, settings, onProgressUpdate
     }
   }
 
+  let finalResult = '';
   if (finalAnalysis) {
     try {
       send({ type: 'status', message: "Generating final report..." });
       conversationHistory.push({ role: 'user', content: "Based on everything analyzed, provide the final, comprehensive report in the required language and format." });
-      
+
       const finalCompletion = await openai.chat.completions.create({ model: MODEL_NAME, messages: conversationHistory, max_tokens: 4000 });
-      send({ type: 'result', data: finalCompletion.choices[0].message.content });
+      finalResult = finalCompletion.choices[0].message.content;
+      send({ type: 'result', data: finalResult });
     } catch (error) {
-      send({ type: 'error', message: `Failed to generate final report: ${error.message}` });
+      finalResult = `Failed to generate final report: ${error.message}`;
+      send({ type: 'error', message: finalResult });
       send({ type: 'result', data: "Final report failed. Here is the last available analysis:\n\n" + finalAnalysis });
     }
   } else {
-    send({ type: 'error', message: 'Video analysis failed. No content was processed.' });
+    finalResult = 'Video analysis failed. No content was processed.';
+    send({ type: 'error', message: finalResult });
   }
 
   send({ type: 'status', message: uiTexts.cleanup });
@@ -393,6 +403,7 @@ async function analyzeVideoInBatchesOpenAI(videoPath, settings, onProgressUpdate
     await fsPromises.rm(folder, { recursive: true, force: true }).catch(() => {});
   }));
   send({ type: 'status', message: uiTexts.cleanupComplete });
+  return finalResult;
 }
 
 
@@ -433,21 +444,25 @@ async function analyzeUploadedMediaOpenAI(framePaths, audioPath, settings, onPro
     ...imageParts
   ];
 
+  let finalResult = '';
   try {
     const completion = await openai.chat.completions.create({
       model: MODEL_NAME,
       messages: [{ role: 'user', content: userContent }],
       max_tokens: 4000
     });
-    send({ type: 'result', data: completion.choices[0].message.content });
+    finalResult = completion.choices[0].message.content;
+    send({ type: 'result', data: finalResult });
   } catch (error) {
-    send({ type: 'error', message: `OpenAI Analysis failed: ${error.message}` });
+    finalResult = `OpenAI Analysis failed: ${error.message}`;
+    send({ type: 'error', message: finalResult });
   } finally {
     send({ type: 'status', message: uiTexts.cleanup });
     for (const fp of framePaths) { await fsPromises.unlink(fp).catch(() => {}); }
     if (audioPath) { await fsPromises.unlink(audioPath).catch(() => {}); }
     send({ type: 'status', message: uiTexts.cleanupComplete });
   }
+  return finalResult;
 }
 
 // --- Ana Yönlendirici Fonksiyonlar ---
@@ -457,7 +472,7 @@ async function analyzeVideoInBatches(videoPath, settings, onProgressUpdate) {
 }
 
 async function analyzeUploadedMedia(framePaths, audioPath, settings, onProgressUpdate) {
-  const handler = settings.aiModule === 'openai' ? analyzeUploadedMediaOpenAI : analyzeUploadedMediaOpenAI;
+  const handler = settings.aiModule === 'openai' ? analyzeUploadedMediaOpenAI : analyzeUploadedMediaGemini;
   return handler(framePaths, audioPath, settings, onProgressUpdate);
 }
 
