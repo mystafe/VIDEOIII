@@ -104,7 +104,7 @@ app.post('/api/analyze', (req, res, next) => {
     analysisResult = await analyzeVideoInBatches(req.file.path, settings, progressCallback);
 
   } catch (error) {
-    console.error('Error during analysis process:', error);
+    console.error('Error during analysis process:', error.message);
     io.to(settings.socketId).emit('progressUpdate', { type: 'error', message: 'An unexpected error occurred on the server.' });
     analysisResult = `Error: ${error.message}`;
   } finally {
@@ -161,7 +161,7 @@ app.post('/api/analyze-browser', (req, res, next) => {
     };
     analysisResult = await analyzeUploadedMedia(framePaths, audioPath, settings, progressCallback);
   } catch (error) {
-    console.error('Error during analysis process:', error);
+    console.error('Error during analysis process:', error.message);
     io.to(settings.socketId).emit('progressUpdate', { type: 'error', message: 'An unexpected error occurred on the server.' });
     analysisResult = `Error: ${error.message}`;
   } finally {
@@ -174,6 +174,17 @@ app.post('/api/analyze-browser', (req, res, next) => {
       analysisResult,
     });
   }
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('Server error:', err.message);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 server.listen(PORT, () => console.log(`🚀 Server started on http://localhost:${PORT}`));

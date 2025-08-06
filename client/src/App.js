@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import io from "socket.io-client";
+import { toast } from 'sonner';
 import './App.css';
-import './Spinner.css';
 import { config as defaultConfig, MODELS, DEFAULT_MODEL, AI_MODULES, DEFAULT_AI_MODULE } from './config.js';
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
-
-const Spinner = () => <div className="spinner"></div>;
+import Spinner from './Spinner';
+import LoadingSkeleton from './LoadingSkeleton';
 const SERVER_URL = "https://videoii-server.onrender.com";
 const socket = io(SERVER_URL);
 
@@ -84,6 +84,7 @@ function App() {
       } else if (data.type === 'error') {
         setAnalysisStatus(prev => ({ ...prev, message: '', error: data.message, percent: 0 }));
         addLog(`Error: ${data.message}`); setIsLoading(false); setTimeLeft(null);
+        toast.error(data.message, { action: { label: 'Retry', onClick: handleUpload } });
       }
     };
     socket.on('connect', () => { setSocketId(socket.id); });
@@ -180,7 +181,9 @@ function App() {
             addLog('Upload complete, processing started on server...');
             setProcessingProgress(0);
         } catch (error) {
-            setAnalysisStatus({ ...getInitialAnalysisState(), error: error.response?.data?.error || 'An upload error occurred.' });
+            const msg = error.response?.data?.error || 'An upload error occurred.';
+            setAnalysisStatus({ ...getInitialAnalysisState(), error: msg });
+            toast.error(msg, { action: { label: 'Retry', onClick: uploadToServer } });
             setIsLoading(false);
         }
     };
@@ -223,12 +226,13 @@ function App() {
         });
         setAnalysisStatus(prev => ({ ...prev, message: 'Upload complete. Waiting for server...' }));
         addLog('Upload successful.');
-      } catch (error) {
+        } catch (error) {
         const errorMsg = error.response?.data?.error || error.message || 'On-device processing failed.';
         setAnalysisStatus({ ...getInitialAnalysisState(), error: errorMsg });
         addLog(`Error: ${errorMsg}`);
+        toast.error(errorMsg, { action: { label: 'Retry', onClick: handleUpload } });
         setIsLoading(false);
-      }
+        }
     }
   };
 
@@ -443,6 +447,7 @@ function App() {
                       <p>Upload</p>
                       <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${uploadProgress}%` }}></div></div>
                       {timeLeft !== null && <p className="time-remaining">Est. time remaining: {timeLeft}s</p>}
+                      <LoadingSkeleton height="20px" />
                     </>
                   }
                   {!analysisStatus.result && <p className="status-message">{analysisStatus.message}</p>}
